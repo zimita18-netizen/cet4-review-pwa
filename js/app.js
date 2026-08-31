@@ -85,12 +85,34 @@
   }
 
   /* ---------- 图片处理 ---------- */
+  // 压缩图片：多张截图直接传会让视觉 token 超限报 400，压缩到最长边 maxW 大幅降低 token
+  function compressImage(dataURI, maxW, quality) {
+    maxW = maxW || 800;
+    quality = quality || 0.8;
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        const w = img.width, h = img.height;
+        if (w <= maxW && h <= maxW) { resolve(dataURI); return; }
+        const scale = maxW / Math.max(w, h);
+        const nw = Math.round(w * scale), nh = Math.round(h * scale);
+        const canvas = document.createElement('canvas');
+        canvas.width = nw; canvas.height = nh;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, nw, nh);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = () => resolve(dataURI);
+      img.src = dataURI;
+    });
+  }
+
   function handleFiles(fileList) {
     const files = Array.from(fileList).filter((f) => /^image\//.test(f.type));
     if (!files.length) { alert('请选择图片'); return; }
     Promise.all(files.map((f) => new Promise((res, rej) => {
       const r = new FileReader();
-      r.onload = () => res(r.result);
+      r.onload = () => compressImage(r.result).then(res, () => res(r.result));
       r.onerror = rej;
       r.readAsDataURL(f);
     }))).then((uris) => {
@@ -140,8 +162,39 @@
   function escapeHtml(s) {
     return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
+  // 单词清单解析 → 用于渲染时兜底高亮
+  function parseWordList(line) {
+    if (!line) return [];
+    return line.split(/[,，、;；]+/).map((s) => s.trim()).filter(Boolean);
+  }
+  // 生成一个单词的常见屈折形式（用于匹配短文里的变形词）
+  function inflect(word) {
+    const w = word.toLowerCase();
+    const set = new Set([w, w + 's', w + 'es', w + 'ed', w + 'd', w + 'ing']);
+    if (w.endsWith('e')) {
+      set.add(w.slice(0, -1) + 'ing');   // diagnose -> diagnosing
+      set.add(w + 's');
+    } else {
+      set.add(w + 's');
+      if (/([^aeiou])y$/.test(w)) { set.add(w.slice(0, -1) + 'ies'); set.add(w.slice(0, -1) + 'ied'); }
+    }
+    set.add(w + 'ly');
+    return set;
+  }
+  function buildHighlightSet(words) {
+    const set = new Set();
+    words.forEach((w) => {
+      const ww = w.toLowerCase();
+      if (ww.length <= 2) return; // 跳过过短词，避免误伤
+      inflect(ww).forEach((f) => set.add(f));
+    });
+    return set;
+  }
+
   // 把短文渲染成 DOM：目标词(**word**)高亮加粗、所有英文单词可点击查词
-  function renderEssayDOM(text) {
+  // highlightSet：兜底高亮集合（清单里的词及其屈折形式），即使模型漏加粗也补标
+  function renderEssayDOM(text, highlightSet) {
+    highlightSet = highlightSet || new Set();
     const frag = document.createDocumentFragment();
     const pattern = /(\*\*[^*]+\*\*)|([A-Za-z][A-Za-z'-]*)/g;
     let last = 0, m;
@@ -158,10 +211,11 @@
         b.textContent = word;
         frag.appendChild(b);
       } else if (m[2]) {
-        // 普通英文单词 → 可点击查词
+        // 普通英文单词 → 可点击查词；若命中了目标词集合则也高亮
         const word = m[2];
+        const isTarget = highlightSet.has(word.toLowerCase());
         const span = document.createElement('span');
-        span.className = 'e-word';
+        span.className = 'e-word' + (isTarget ? ' target' : '');
         span.dataset.word = word;
         span.textContent = word;
         frag.appendChild(span);
@@ -182,7 +236,7 @@
     '你是一名经验丰富的大学英语四级教师。请完成以下任务：',
     '',
     '1. 仔细识别图片中出现的所有「正在学习的英文单词或词组」。忽略界面按钮、中文释义、菜单等非学习内容，只提取用户要背的英文单词本身，并还原原形（如 studies→study）。',
-    '2. 用提取到的这些单词，写一篇 130~180 词的英文短文。要求：内容连贯、自然地道、适合中文大学生的四级阅读水平；每个目标单词在文中首次出现时用 **两个星号** 加粗包起来。',
+    '2. 用提取到的这些单词，写一篇 130~180 词的英文短文。要求：内容连贯、自然地道、适合中文大学生的四级阅读水平；文中出现的每个目标单词（保持原形，不要变形成过去式/复数等）都必须用 **两个星号** 加粗包起来，一个都不能漏。',
     '3. 在短文之后另起一行写「===翻译===」，下面输出短文的完整中文翻译。',
     '',
     '请严格按以下格式输出，不要有多余解释：',
@@ -271,8 +325,9 @@
     en = en.replace(/^[\s\S]*?短文[:：]\s*/, '').trim();
     cn = cn.trim();
 
+    const targetWords = parseWordList(wordsLine);
     $('essay-en').innerHTML = '';
-    $('essay-en').appendChild(renderEssayDOM(en));
+    $('essay-en').appendChild(renderEssayDOM(en, buildHighlightSet(targetWords)));
     $('essay-cn').textContent = cn;
     $('words-chip').textContent = wordsLine ? '目标单词：' + wordsLine : '';
 
@@ -399,7 +454,7 @@
       div.appendChild(e);
       div.addEventListener('click', () => {
         $('essay-en').innerHTML = '';
-        $('essay-en').appendChild(renderEssayDOM(item.en));
+        $('essay-en').appendChild(renderEssayDOM(item.en, buildHighlightSet(parseWordList(item.words))));
         $('essay-cn').textContent = item.cn;
         $('words-chip').textContent = item.words ? '目标单词：' + item.words : '';
         $('result-card').classList.remove('hidden');
