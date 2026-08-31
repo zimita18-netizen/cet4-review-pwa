@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#5a8f6a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="单词巩固">
+  <title>单词巩固 · 每日趁热打铁</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <h1 class="brand">🌱 单词巩固</h1>
+      <div class="plant" id="plant-box">
+        <span class="plant-emoji" id="plant-emoji">🌱</span>
+        <span class="plant-level" id="plant-level">Lv.1</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <!-- 首页：今日新词锚点 + 开始 -->
+    <section class="view" id="view-home">
+      <div class="card">
+        <p class="greeting" id="greeting">嗨，今天在不背单词背完新词了吗？</p>
+        <p class="sub" id="sub-tip">背完后花 60 秒，把今天的新词锁进脑子。</p>
+      </div>
+
+      <div class="card" id="range-card">
+        <div class="range-head">
+          <span class="label">今天这段词</span>
+          <span class="range-count" id="range-count">0 个</span>
+        </div>
+        <p class="range-hint">上次停在 <b id="anchor-word">—</b>，默认往前推你的习惯量。背得少了就把终点往回拖。</p>
+        <button class="btn-link" id="btn-align" style="margin-bottom:10px">📍 校正位置（对齐不背单词）</button>
+        <input type="range" id="end-slider" min="1" max="30" value="30" step="1">
+        <div class="range-words" id="range-words"></div>
+      </div>
+
+      <div class="actions">
+        <button class="btn btn-primary" id="btn-start">开始巩固</button>
+        <button class="btn btn-ghost" id="btn-review-only">今天只复习了旧词</button>
+      </div>
+
+      <div class="card stats-card">
+        <div class="stats-row">
+          <div class="stat"><div class="num" id="stat-known">0</div><div class="lab">已会词汇</div></div>
+          <div class="stat"><div class="num" id="stat-due">0</div><div class="lab">待复习</div></div>
+          <div class="stat"><div class="num" id="stat-days">0</div><div class="lab">坚持天数</div></div>
+        </div>
+        <button class="btn-link" id="btn-export">导出备份</button>
+        <button class="btn-link" id="btn-import">导入备份</button>
+        <input type="file" id="import-file" accept="application/json" style="display:none">
+      </div>
+    </section>
+
+    <!-- 巩固流程：翻卡 + 四选一 -->
+    <section class="view hidden" id="view-quiz">
+      <div class="progress" id="quiz-progress">1 / 30</div>
+
+      <!-- 阶段1：翻卡回忆 -->
+      <div id="stage-flip" class="card flip-card">
+        <div class="flip-word" id="flip-word">word</div>
+        <div class="flip-phone" id="flip-phone">/音标/</div>
+        <button class="btn btn-primary btn-wide" id="btn-reveal">想起来了吗？翻卡看答案</button>
+        <div class="flip-answer hidden" id="flip-answer">
+          <div class="flip-trans" id="flip-trans">释义</div>
+          <div class="flip-sent" id="flip-sent-en">例句</div>
+          <div class="flip-sent-cn" id="flip-sent-cn">例句翻译</div>
+        </div>
+        <div class="flip-btns hidden" id="flip-btns">
+          <button class="btn btn-bad" data-grade="2">不认识</button>
+          <button class="btn btn-mid" data-grade="1">模糊</button>
+          <button class="btn btn-good" data-grade="0">认识</button>
+        </div>
+      </div>
+
+      <!-- 阶段2：四选一 -->
+      <div id="stage-choice" class="card hidden">
+        <div class="choice-word" id="choice-word">word</div>
+        <div class="choice-phone" id="choice-phone">/音标/</div>
+        <div class="choice-options" id="choice-options"></div>
+        <div class="choice-feedback hidden" id="choice-feedback"></div>
+        <button class="btn btn-primary btn-wide hidden" id="btn-next">下一词</button>
+      </div>
+    </section>
+
+    <!-- 完成页 -->
+    <section class="view hidden" id="view-done">
+      <div class="card done-card">
+        <div class="done-emoji" id="done-emoji">✨</div>
+        <h2 id="done-title">太棒了！</h2>
+        <p id="done-text">今天的词已经锁进脑子。</p>
+        <div class="done-stats" id="done-stats"></div>
+        <button class="btn btn-primary btn-wide" id="btn-home">收工</button>
+      </div>
+    </section>
+    <!-- 词表选择（校正锚点） -->
+    <section class="view hidden" id="view-wordlist">
+      <div class="card">
+        <p class="sub" style="margin-bottom:10px">找到你在不背单词里「刚背完的最后一个词」，点一下，位置就对齐了。</p>
+        <input type="search" id="wl-search" placeholder="输入单词搜索…" class="search-input" autocomplete="off">
+        <div class="wl-list" id="wl-list"></div>
+      </div>
+      <button class="btn btn-ghost" id="btn-wl-back">返回</button>
+    </section>
+  </main>
+
+  <script src="js/words.js"></script>
+  <script src="js/app.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('./sw.js').catch(function () {});
+      });
+    }
+  </script>
+</body>
+</html>
