@@ -74,8 +74,12 @@
           <input type="url" id="cfg-baseurl" placeholder="https://open.bigmodel.cn/api/paas/v4">
         </label>
         <label class="field">
-          <span>模型名 model</span>
+          <span>模型名 model（生短文用的视觉模型）</span>
           <input type="text" id="cfg-model" placeholder="glm-4v-flash">
+        </label>
+        <label class="field">
+          <span>查词模型（点单词查意思用，可留空则用同上）</span>
+          <input type="text" id="cfg-textmodel" placeholder="glm-4-flash">
         </label>
         <label class="field">
           <span>API Key</span>
@@ -96,6 +100,17 @@
         <button class="icon-btn" id="btn-history-close">✕</button>
       </div>
       <div class="drawer-body" id="history-list"></div>
+    </div>
+  </div>
+
+  <!-- 查词弹窗 -->
+  <div class="lookup-mask hidden" id="lookup-mask">
+    <div class="lookup-pop">
+      <div class="lookup-head">
+        <b id="lookup-word">word</b>
+        <button class="icon-btn" id="btn-lookup-close">✕</button>
+      </div>
+      <div class="lookup-body" id="lookup-body">查询中…</div>
     </div>
   </div>
 

@@ -13,17 +13,20 @@
     glm: {
       name: 'GLM-4V-Flash（免费）',
       baseURL: 'https://open.bigmodel.cn/api/paas/v4',
-      model: 'glm-4v-flash'
+      model: 'glm-4v-flash',
+      textModel: 'glm-4-flash'
     },
     deepseek: {
       name: 'DeepSeek（VL）',
       baseURL: 'https://api.deepseek.com',
-      model: 'deepseek-chat'
+      model: 'deepseek-chat',
+      textModel: 'deepseek-chat'
     },
     custom: {
       name: '自定义',
       baseURL: '',
-      model: ''
+      model: '',
+      textModel: ''
     }
   };
 
@@ -33,6 +36,7 @@
   const DEFAULTS = {
     baseURL: PRESETS.glm.baseURL,
     model: PRESETS.glm.model,
+    textModel: PRESETS.glm.textModel,
     key: seed.key || ''
   };
 
@@ -66,6 +70,7 @@
   function syncCfgToUI() {
     $('cfg-baseurl').value = cfg.baseURL;
     $('cfg-model').value = cfg.model;
+    $('cfg-textmodel').value = cfg.textModel || '';
     $('cfg-key').value = cfg.key;
     highlightPreset();
   }
@@ -83,14 +88,16 @@
   function handleFile(file) {
     if (!file) return;
     if (!/^image\//.test(file.type)) { alert('请选择图片文件'); return; }
+    // 只保留一张：每次替换 currentImage，不做多选
     const reader = new FileReader();
     reader.onload = () => {
       currentImage = reader.result;
       $('preview-img').src = currentImage;
       $('preview-box').classList.remove('hidden');
       $('upload-zone').classList.add('hidden');
-      $('upload-text').textContent = '图片已就绪';
+      $('upload-text').textContent = '图片已就绪（一次一张，点「重选」换图）';
       refreshGenerateBtn();
+      $('file-input').value = '';
     };
     reader.readAsDataURL(file);
   }
@@ -102,8 +109,41 @@
   function escapeHtml(s) {
     return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
-  function renderMarkdownBold(s) {
-    // **词** → <b>词</b>
+  // 把短文渲染成 DOM：目标词(**word**)高亮加粗、所有英文单词可点击查词
+  function renderEssayDOM(text) {
+    const frag = document.createDocumentFragment();
+    const pattern = /(\*\*[^*]+\*\*)|([A-Za-z][A-Za-z'-]*)/g;
+    let last = 0, m;
+    while ((m = pattern.exec(text)) !== null) {
+      if (m.index > last) {
+        frag.appendChild(document.createTextNode(text.slice(last, m.index)));
+      }
+      if (m[1]) {
+        // 目标词 → 高亮加粗
+        const word = m[1].replace(/\*/g, '');
+        const b = document.createElement('b');
+        b.className = 'e-word target';
+        b.dataset.word = word;
+        b.textContent = word;
+        frag.appendChild(b);
+      } else if (m[2]) {
+        // 普通英文单词 → 可点击查词
+        const word = m[2];
+        const span = document.createElement('span');
+        span.className = 'e-word';
+        span.dataset.word = word;
+        span.textContent = word;
+        frag.appendChild(span);
+      }
+      last = m.index + m[0].length;
+    }
+    if (last < text.length) {
+      frag.appendChild(document.createTextNode(text.slice(last)));
+    }
+    return frag;
+  }
+  // 历史摘要用：仅高亮加粗，不做点击查词
+  function renderHighlightHtml(s) {
     return escapeHtml(s).replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
   }
 
@@ -200,7 +240,8 @@
     en = en.replace(/^[\s\S]*?短文[:：]\s*/, '').trim();
     cn = cn.trim();
 
-    $('essay-en').innerHTML = renderMarkdownBold(en);
+    $('essay-en').innerHTML = '';
+    $('essay-en').appendChild(renderEssayDOM(en));
     $('essay-cn').textContent = cn;
     $('words-chip').textContent = wordsLine ? '目标单词：' + wordsLine : '';
 
@@ -236,6 +277,61 @@
     setTimeout(() => el.classList.add('hidden'), 1800);
   }
 
+  /* ---------- 点击查词 ---------- */
+  function showLookup(word, content) {
+    $('lookup-word').textContent = word;
+    $('lookup-body').textContent = content;
+    $('lookup-mask').classList.remove('hidden');
+  }
+  function closeLookup() {
+    $('lookup-mask').classList.add('hidden');
+  }
+  let lookupSeq = 0;
+  async function lookupWord(word) {
+    if (!word) return;
+    if (!cfg.key || !cfg.baseURL) {
+      $('lookup-mask').classList.add('hidden');
+      openSettings();
+      alert('请先在设置里填写 API Key，才能点击查词');
+      return;
+    }
+    const seq = ++lookupSeq;
+    showLookup(word, '查询中…');
+    const model = cfg.textModel || cfg.model;
+    const prompt = [
+      '请用中文准确简洁地解释这个英文单词或短语：' + word,
+      '严格按以下格式输出：',
+      '音标: /.../',
+      '词性: n. / v. / adj. 等',
+      '释义: 中文释义（最多列出4个常用义项，用分号隔开）',
+      '例句: 一个简单英文例句',
+      '翻译: 例句的中文翻译'
+    ].join('\n');
+    try {
+      const url = cfg.baseURL.replace(/\/+$/, '') + '/chat/completions';
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + cfg.key },
+        body: JSON.stringify({
+          model: model,
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0.3,
+          max_tokens: 400
+        })
+      });
+      if (!resp.ok) {
+        const t = await resp.text();
+        throw new Error(resp.status + '：' + t.slice(0, 150));
+      }
+      const data = await resp.json();
+      const content = (data.choices && data.choices[0].message && data.choices[0].message.content) || '';
+      if (!content) throw new Error('模型未返回内容');
+      if (seq === lookupSeq) $('lookup-body').textContent = content;
+    } catch (e) {
+      if (seq === lookupSeq) $('lookup-body').textContent = '查询失败：' + e.message;
+    }
+  }
+
   /* ---------- 历史记录 ---------- */
   function saveHistory(words, en, cn) {
     let list = [];
@@ -267,11 +363,12 @@
       d.textContent = item.date + (item.words ? ' · ' + item.words : '');
       const e = document.createElement('div');
       e.className = 'h-excerpt';
-      e.innerHTML = renderMarkdownBold(item.en);
+      e.innerHTML = renderHighlightHtml(item.en);
       div.appendChild(d);
       div.appendChild(e);
       div.addEventListener('click', () => {
-        $('essay-en').innerHTML = renderMarkdownBold(item.en);
+        $('essay-en').innerHTML = '';
+        $('essay-en').appendChild(renderEssayDOM(item.en));
         $('essay-cn').textContent = item.cn;
         $('words-chip').textContent = item.words ? '目标单词：' + item.words : '';
         $('result-card').classList.remove('hidden');
@@ -295,9 +392,11 @@
       // 清空让用户自己填，但保留当前 key
       $('cfg-baseurl').value = '';
       $('cfg-model').value = '';
+      $('cfg-textmodel').value = '';
     } else {
       $('cfg-baseurl').value = p.baseURL;
       $('cfg-model').value = p.model;
+      $('cfg-textmodel').value = p.textModel || '';
     }
     highlightPreset();
   }
@@ -305,6 +404,7 @@
   function saveSettings() {
     cfg.baseURL = $('cfg-baseurl').value.trim();
     cfg.model = $('cfg-model').value.trim();
+    cfg.textModel = $('cfg-textmodel').value.trim() || cfg.model;
     cfg.key = $('cfg-key').value.trim();
     saveCfg();
     refreshGenerateBtn();
@@ -383,6 +483,16 @@
     });
 
     $('btn-copy').addEventListener('click', copyAll);
+
+    // 点击短文单词查词（事件委托）
+    $('essay-en').addEventListener('click', (e) => {
+      const el = e.target.closest('.e-word');
+      if (el && el.dataset.word) lookupWord(el.dataset.word);
+    });
+    $('btn-lookup-close').addEventListener('click', closeLookup);
+    $('lookup-mask').addEventListener('click', (e) => {
+      if (e.target === $('lookup-mask')) closeLookup();
+    });
   }
 
   if (document.readyState === 'loading') {

@@ -90,8 +90,24 @@ body { padding-bottom: env(safe-area-inset-bottom); }
 .result-card { padding: 20px; }
 .result-tools { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
 .result-title { font-size: 14px; font-weight: 700; }
-.essay { font-size: 16px; line-height: 1.8; color: var(--text); white-space: pre-wrap; }
-.essay b, .essay strong { color: var(--primary); font-weight: 700; }
+.essay { font-size: 16px; line-height: 2.0; color: var(--text); white-space: pre-wrap; }
+/* 可点击查词的单词 */
+.essay .e-word {
+  cursor: pointer;
+  border-bottom: 1px solid transparent;
+  transition: background .12s;
+}
+.essay .e-word:hover, .essay .e-word:active { background: #eef4fb; border-radius: 3px; }
+/* 目标单词：荧光高亮，醒目 */
+.essay b.e-word, .essay b.e-word.target {
+  background: #ffec7a;
+  color: #6b5710;
+  font-weight: 800;
+  padding: 1px 4px;
+  border-radius: 4px;
+  border-bottom: none;
+}
+.essay b.e-word:hover, .essay b.e-word:active { background: #ffe21f; }
 .essay-divider { text-align: center; color: var(--muted); font-size: 12px; margin: 18px 0 12px; }
 .essay-cn { font-size: 15px; line-height: 1.8; color: #4a5668; white-space: pre-wrap; }
 .words-chip { margin-top: 14px; font-size: 12px; color: var(--muted); line-height: 1.6; word-break: break-all; }
@@ -138,3 +154,25 @@ body { padding-bottom: env(safe-area-inset-bottom); }
 .history-item .h-date { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
 .history-item .h-excerpt { font-size: 14px; line-height: 1.6; color: var(--text); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .history-empty { text-align: center; color: var(--muted); font-size: 13px; padding: 30px 0; }
+
+/* 查词弹窗 */
+.lookup-mask {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.35); z-index: 60;
+  display: flex; align-items: center; justify-content: center; padding: 20px;
+}
+.lookup-pop {
+  width: 100%; max-width: 420px; max-height: 70vh;
+  background: #fff; border-radius: 16px; padding: 18px;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+  overflow-y: auto; -webkit-overflow-scrolling: touch;
+  animation: pop .18s ease;
+}
+@keyframes pop { from { transform: scale(0.92); opacity: 0; } to { transform: none; opacity: 1; } }
+.lookup-head {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 10px;
+}
+.lookup-head b { font-size: 22px; color: var(--primary); }
+.lookup-body { font-size: 15px; line-height: 1.8; white-space: pre-wrap; color: var(--text); }
+.lookup-body .lk-ph { color: var(--muted); }
+.lookup-body .lk-pos { color: var(--primary); font-weight: 600; }
