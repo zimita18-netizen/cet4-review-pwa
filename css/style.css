@@ -168,13 +168,11 @@ body { padding-bottom: env(safe-area-inset-bottom); }
 .drawer-title { font-size: 16px; font-weight: 700; }
 .drawer-body { display: flex; flex-direction: column; gap: 12px; }
 
-.presets .label { font-size: 13px; color: var(--muted); display: block; margin-bottom: 6px; }
-.preset-list { display: flex; gap: 8px; flex-wrap: wrap; }
-.preset {
-  padding: 8px 14px; font-size: 13px; border-radius: 20px; cursor: pointer;
-  border: 1.5px solid var(--line); background: #fff; color: var(--text);
+.cfg-group {
+  border: 1px solid var(--line); border-radius: 12px; padding: 12px;
+  display: flex; flex-direction: column; gap: 10px; background: #fafbfd;
 }
-.preset.active { border-color: var(--primary); background: rgba(59,110,165,0.08); color: var(--primary); font-weight: 600; }
+.cfg-group-title { font-size: 13px; font-weight: 700; color: var(--text); }
 
 .field { display: flex; flex-direction: column; gap: 5px; }
 .field span { font-size: 13px; color: var(--muted); }

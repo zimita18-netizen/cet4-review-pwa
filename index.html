@@ -59,31 +59,37 @@
         <button class="icon-btn" id="btn-settings-close">✕</button>
       </div>
       <div class="drawer-body">
-        <div class="presets">
-          <span class="label">一键切换模型</span>
-          <div class="preset-list">
-            <button class="preset" data-preset="glm">GLM-4V-Flash(免费)</button>
-            <button class="preset" data-preset="deepseek">DeepSeek</button>
-            <button class="preset" data-preset="custom">自定义</button>
-          </div>
+        <div class="cfg-group">
+          <div class="cfg-group-title">👁 识图模型（识别截图里的单词）</div>
+          <label class="field">
+            <span>API 地址</span>
+            <input type="url" id="cfg-vision-baseurl" placeholder="https://open.bigmodel.cn/api/paas/v4">
+          </label>
+          <label class="field">
+            <span>模型名</span>
+            <input type="text" id="cfg-vision-model" placeholder="glm-4v-flash">
+          </label>
+          <label class="field">
+            <span>API Key</span>
+            <input type="password" id="cfg-vision-key" placeholder="识图模型 key" autocomplete="off">
+          </label>
         </div>
-        <label class="field">
-          <span>API 地址 baseURL</span>
-          <input type="url" id="cfg-baseurl" placeholder="https://open.bigmodel.cn/api/paas/v4">
-        </label>
-        <label class="field">
-          <span>模型名 model（生短文用的视觉模型）</span>
-          <input type="text" id="cfg-model" placeholder="glm-4v-flash">
-        </label>
-        <label class="field">
-          <span>查词模型（点单词查意思用，可留空则用同上）</span>
-          <input type="text" id="cfg-textmodel" placeholder="glm-4-flash">
-        </label>
-        <label class="field">
-          <span>API Key</span>
-          <input type="password" id="cfg-key" placeholder="粘贴你的 API Key" autocomplete="off">
-        </label>
-        <p class="field-hint">🔑 去 bigmodel.cn 免费注册拿 key；key 只存本机，不上传。<br>换模型时改上面三项即可。</p>
+        <div class="cfg-group">
+          <div class="cfg-group-title">✍️ 写文模型（生成短文 + 翻译 + 查词）</div>
+          <label class="field">
+            <span>API 地址</span>
+            <input type="url" id="cfg-write-baseurl" placeholder="https://api.deepseek.com">
+          </label>
+          <label class="field">
+            <span>模型名</span>
+            <input type="text" id="cfg-write-model" placeholder="deepseek-chat">
+          </label>
+          <label class="field">
+            <span>API Key</span>
+            <input type="password" id="cfg-write-key" placeholder="写文模型 key" autocomplete="off">
+          </label>
+        </div>
+        <p class="field-hint">key 只存本机、不上传。默认已帮你配好，一般不用改。</p>
         <button class="btn btn-primary" id="btn-save-cfg">保存设置</button>
         <button class="btn btn-ghost" id="btn-test">测试连接</button>
       </div>

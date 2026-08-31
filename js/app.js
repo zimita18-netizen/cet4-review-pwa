@@ -22,25 +22,16 @@
     try { localStorage.setItem(MARK_KEY, JSON.stringify(Array.from(markedWords))); } catch (e) { /* ignore */ }
   }
 
-  /* ---------- 预设模型模板 ---------- */
+  /* ---------- 预设模型模板（两套：识图 vision + 写文 write） ---------- */
   const PRESETS = {
-    glm: {
-      name: 'GLM-4V-Flash（免费）',
-      baseURL: 'https://open.bigmodel.cn/api/paas/v4',
-      model: 'glm-4v-flash',
-      textModel: 'glm-4-flash'
+    vision: {
+      glm: { baseURL: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4v-flash' },
+      deepseek: { baseURL: 'https://api.deepseek.com', model: 'deepseek-v4-flash-vision-exp' },
+      doubao: { baseURL: 'https://ark.cn-beijing.volces.com/api/v3', model: 'doubao-seed-2-0-lite-260215' }
     },
-    deepseek: {
-      name: 'DeepSeek（VL）',
-      baseURL: 'https://api.deepseek.com',
-      model: 'deepseek-chat',
-      textModel: 'deepseek-chat'
-    },
-    custom: {
-      name: '自定义',
-      baseURL: '',
-      model: '',
-      textModel: ''
+    write: {
+      deepseek: { baseURL: 'https://api.deepseek.com', model: 'deepseek-chat' },
+      glm: { baseURL: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4-flash' }
     }
   };
 
@@ -48,10 +39,16 @@
   const seed = (typeof window !== 'undefined' && window.CONFIG_SEED) || {};
 
   const DEFAULTS = {
-    baseURL: PRESETS.glm.baseURL,
-    model: PRESETS.glm.model,
-    textModel: PRESETS.glm.textModel,
-    key: seed.key || ''
+    vision: {
+      baseURL: PRESETS.vision.glm.baseURL,
+      model: PRESETS.vision.glm.model,
+      key: seed.visionKey || ''
+    },
+    write: {
+      baseURL: PRESETS.write.deepseek.baseURL,
+      model: PRESETS.write.deepseek.model,
+      key: seed.writeKey || ''
+    }
   };
 
   let cfg = load();
@@ -61,11 +58,25 @@
 
   /* ---------- 配置读写 ---------- */
   function load() {
+    const base = {
+      vision: Object.assign({}, DEFAULTS.vision),
+      write: Object.assign({}, DEFAULTS.write)
+    };
     try {
       const raw = localStorage.getItem(STORE_KEY);
-      if (raw) return Object.assign({}, DEFAULTS, JSON.parse(raw));
+      if (raw) {
+        const s = JSON.parse(raw);
+        if (s && s.baseURL !== undefined) {
+          // 旧版平铺结构 → 迁移为 vision 配置
+          base.vision = { baseURL: s.baseURL, model: s.model, key: s.key || base.vision.key };
+          base.write = { baseURL: DEFAULTS.write.baseURL, model: DEFAULTS.write.model, key: s.key || base.write.key };
+        } else {
+          if (s.vision) base.vision = Object.assign({}, base.vision, s.vision);
+          if (s.write) base.write = Object.assign({}, base.write, s.write);
+        }
+      }
     } catch (e) { /* ignore */ }
-    return Object.assign({}, DEFAULTS);
+    return base;
   }
   function saveCfg() {
     try { localStorage.setItem(STORE_KEY, JSON.stringify(cfg)); } catch (e) { /* ignore */ }
@@ -82,20 +93,12 @@
   }
 
   function syncCfgToUI() {
-    $('cfg-baseurl').value = cfg.baseURL;
-    $('cfg-model').value = cfg.model;
-    $('cfg-textmodel').value = cfg.textModel || '';
-    $('cfg-key').value = cfg.key;
-    highlightPreset();
-  }
-  function highlightPreset() {
-    const btns = document.querySelectorAll('.preset');
-    btns.forEach((b) => b.classList.remove('active'));
-    let active = 'custom';
-    if (cfg.baseURL === PRESETS.glm.baseURL && cfg.model === PRESETS.glm.model) active = 'glm';
-    else if (cfg.baseURL === PRESETS.deepseek.baseURL && cfg.model === PRESETS.deepseek.model) active = 'deepseek';
-    const target = document.querySelector('.preset[data-preset="' + active + '"]');
-    if (target) target.classList.add('active');
+    $('cfg-vision-baseurl').value = cfg.vision.baseURL;
+    $('cfg-vision-model').value = cfg.vision.model;
+    $('cfg-vision-key').value = cfg.vision.key;
+    $('cfg-write-baseurl').value = cfg.write.baseURL;
+    $('cfg-write-model').value = cfg.write.model;
+    $('cfg-write-key').value = cfg.write.key;
   }
 
   /* ---------- 图片处理 ---------- */
@@ -169,7 +172,7 @@
   }
 
   function refreshGenerateBtn() {
-    $('btn-generate').disabled = !(currentImages.length && cfg.key);
+    $('btn-generate').disabled = !(currentImages.length && cfg.vision.key && cfg.write.key);
   }
 
   /* ---------- 生成短文 ---------- */
@@ -247,74 +250,87 @@
     return escapeHtml(s).replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
   }
 
-  const PROMPT = [
-    '你是一名经验丰富的大学英语四级教师。请完成以下任务：',
-    '',
-    '1. 仔细识别图片中出现的所有「正在学习的英文单词或词组」。忽略界面按钮、中文释义、菜单等非学习内容，只提取用户要背的英文单词本身，并还原原形（如 studies→study）。',
-    '2. 用识别到的这些单词写一篇【简短】的英文短文，总词数严格控制在 120~150 词，分成 3 个左右自然段，段与段之间用空行隔开。要求：尽量自然地多用上目标单词（不必强行每一个都用上），内容简洁连贯、贴合大学英语四级水平；每个用到的目标单词都用 **两个星号** 加粗包起来，保持原形不要变形。除目标词之外，其它词汇一律用最简单常见的四级词，严禁生僻词、学术术语、文学性生词，不要引入额外的难词。',
-    '3. 只输出英文短文，不要输出中文翻译（翻译由用户自己处理）。',
-    '',
-    '请严格按以下格式输出，不要有多余解释：',
-    '',
-    '单词: word1, word2, word3（务必列出图中识别到的全部单词，一个都不漏）',
-    '',
-    '短文:',
-    '（第一段英文，目标词用 **word** 加粗）',
-    '',
-    '（第二段英文）',
-    '',
-    '（第三段英文）'
-  ].join('\n');
+  // 识图用 prompt：只提取单词清单
+  const VISION_PROMPT = [
+    '你是英语老师。请仔细识别图片中所有「正在学习的英文单词或词组」，忽略界面按钮、中文释义、菜单提示等非学习内容，只提取用户要背的英文单词本身，并还原原形（如 studies→study、diagnosed→diagnose）。',
+    '只输出一份单词清单，词与词之间用英文逗号分隔，不要任何解释、不要编号、不要多余内容。']
+    .join('\n');
+
+  // 写短文用 prompt：根据清单生成短文
+  function writeEssayPrompt(words) {
+    return [
+      '你是经验丰富的大学英语四级教师。请用下面这些英文单词写一篇【简短】的英文短文：',
+      words,
+      '',
+      '要求：',
+      '1. 总词数严格控制在 120~150 词，分成 3 个左右自然段，段与段之间用空行隔开。',
+      '2. 尽量自然地多用上这些目标单词（不必强行每一个都用上），每个用到的目标单词都用 **两个星号** 加粗包起来，保持原形不要变形。',
+      '3. 内容简洁连贯、贴合四级水平；除目标词之外，其它词汇一律用最简单常见的四级词，严禁生僻词、学术术语、文学性生词。',
+      '4. 只输出英文短文，不要输出中文翻译、不要解释。'
+    ].join('\n');
+  }
+
+  // 第一步：识图，提取单词清单
+  async function callVision() {
+    const url = cfg.vision.baseURL.replace(/\/+$/, '') + '/chat/completions';
+    const content = currentImages.map((uri) => ({ type: 'image_url', image_url: { url: uri } }));
+    content.push({ type: 'text', text: VISION_PROMPT });
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + cfg.vision.key },
+      body: JSON.stringify({ model: cfg.vision.model, messages: [{ role: 'user', content }], temperature: 0.3, max_tokens: 800 })
+    });
+    if (!resp.ok) {
+      const t = await resp.text();
+      throw new Error('识图失败(' + resp.status + ')：' + t.slice(0, 150));
+    }
+    const data = await resp.json();
+    const txt = (data.choices && data.choices[0].message && data.choices[0].message.content) || '';
+    if (!txt.trim()) throw new Error('识图模型没返回单词');
+    return txt.trim();
+  }
+
+  // 第二步：写短文
+  async function callWrite(prompt) {
+    const url = cfg.write.baseURL.replace(/\/+$/, '') + '/chat/completions';
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + cfg.write.key },
+      body: JSON.stringify({ model: cfg.write.model, messages: [{ role: 'user', content: prompt }], temperature: 0.7, max_tokens: 1500 })
+    });
+    if (!resp.ok) {
+      const t = await resp.text();
+      throw new Error('写文失败(' + resp.status + ')：' + t.slice(0, 150));
+    }
+    const data = await resp.json();
+    return (data.choices && data.choices[0].message && data.choices[0].message.content) || '';
+  }
 
   async function generate() {
     if (!currentImages.length) return;
-    if (!cfg.key) { openSettings(); alert('请先填写 API Key'); return; }
-    if (!cfg.baseURL || !cfg.model) { openSettings(); alert('请先填写 baseURL 和模型名'); return; }
+    if (!cfg.vision.key || !cfg.write.key) { openSettings(); alert('请先在设置里填好「识图模型」和「写文模型」的 key'); return; }
+    if (!cfg.vision.baseURL || !cfg.vision.model || !cfg.write.baseURL || !cfg.write.model) { openSettings(); alert('请先填全识别/写文模型的地址和模型名'); return; }
 
     const status = $('gen-status');
     status.classList.remove('hidden');
     status.classList.remove('error');
-    status.textContent = '正在识别 ' + currentImages.length + ' 张截图并生成短文，稍等几秒…';
     $('btn-generate').disabled = true;
 
     try {
-      const url = cfg.baseURL.replace(/\/+$/, '') + '/chat/completions';
-      // 多张图依次放入 content，再附文字指令
-      const content = currentImages.map((uri) => ({ type: 'image_url', image_url: { url: uri } }));
-      content.push({ type: 'text', text: PROMPT });
-      const resp = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer ' + cfg.key
-        },
-        body: JSON.stringify({
-          model: cfg.model,
-          messages: [{
-            role: 'user',
-            content: content
-          }],
-          temperature: 0.7,
-          max_tokens: 1024
-        })
-      });
+      // 第一步：识图拿单词清单
+      status.textContent = '① 正在识别截图中的单词…';
+      const wordsLine = await callVision();
 
-      if (!resp.ok) {
-        const txt = await resp.text();
-        throw new Error('调用失败(' + resp.status + ')：' + txt.slice(0, 200));
-      }
+      // 第二步：写短文
+      status.textContent = '② 正在根据单词生成短文…';
+      const essay = await callWrite(writeEssayPrompt(wordsLine));
+      if (!essay.trim()) throw new Error('写文模型没返回短文');
 
-      const data = await resp.json();
-      const text = data.choices && data.choices[0] && data.choices[0].message
-        ? data.choices[0].message.content
-        : '';
-      if (!text) throw new Error('模型没有返回内容');
-
-      renderResult(text);
+      renderResult(wordsLine, essay);
       status.classList.add('hidden');
     } catch (e) {
       status.classList.add('error');
-      status.textContent = '出错：' + e.message + '\n（可检查 key / baseURL / 模型名是否正确）';
+      status.textContent = '出错：' + e.message + '\n（可到设置里检查 key / 模型）';
     } finally {
       refreshGenerateBtn();
     }
@@ -325,14 +341,14 @@
     return raw.split(/\n\s*\n/).map((b) => b.trim()).filter(Boolean);
   }
 
-  // 用文本模型翻译一段英文
+  // 用写文模型翻译一段英文
   async function translateParagraph(en) {
-    const model = cfg.textModel || cfg.model;
+    const model = cfg.write.model;
     const prompt = '把下面这段英文翻译成自然流畅的中文，只输出翻译结果，不要任何解释或原文：\n\n' + en;
-    const url = cfg.baseURL.replace(/\/+$/, '') + '/chat/completions';
+    const url = cfg.write.baseURL.replace(/\/+$/, '') + '/chat/completions';
     const resp = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + cfg.key },
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + cfg.write.key },
       body: JSON.stringify({
         model: model,
         messages: [{ role: 'user', content: prompt }],
@@ -344,39 +360,6 @@
       const t = await resp.text();
       throw new Error(resp.status + '：' + t.slice(0, 120));
     }
-    const data = await resp.json();
-    return (data.choices && data.choices[0].message && data.choices[0].message.content) || '';
-  }
-
-  // 找出清单里没被短文用到的词
-  function findMissingWords(words, paragraphs) {
-    const allText = paragraphs.join(' ').toLowerCase().replace(/\*\*/g, '');
-    return words.filter((w) => {
-      if (w.length <= 2) return false;
-      const forms = inflect(w);
-      return !Array.from(forms).some((f) => {
-        const re = new RegExp('\\b' + f.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b');
-        return re.test(allText);
-      });
-    });
-  }
-
-  // 用漏掉的词补写一小段，强制补全
-  async function supplementParagraph(words) {
-    const model = cfg.textModel || cfg.model;
-    const prompt = '请用下面这些英文单词写一小段连贯的英文（2~4 句），把【每一个】单词都自然用上，句子地道、用词简单、四级水平、不超纲：\n' + words.join(', ');
-    const url = cfg.baseURL.replace(/\/+$/, '') + '/chat/completions';
-    const resp = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + cfg.key },
-      body: JSON.stringify({
-        model: model,
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.7,
-        max_tokens: 500
-      })
-    });
-    if (!resp.ok) throw new Error(resp.status);
     const data = await resp.json();
     return (data.choices && data.choices[0].message && data.choices[0].message.content) || '';
   }
@@ -412,17 +395,9 @@
     });
   }
 
-  async function renderResult(text) {
-    // 解析：单词清单 + 分段英文（翻译由前端逐段完成）
-    let wordsLine = '';
-    const wordsMatch = text.match(/单词[:：]\s*([^\n]+)/);
-    if (wordsMatch) wordsLine = wordsMatch[1].trim();
-
-    let body = text;
-    const bodyMatch = text.match(/短文[:：]\s*([\s\S]*)$/);
-    if (bodyMatch) body = bodyMatch[1];
-    body = body.trim();
-
+  async function renderResult(wordsLine, essay) {
+    // wordsLine：单词清单字符串；essay：分段英文（翻译由前端逐段完成）
+    const body = (essay || '').trim();
     const paragraphs = parseParagraphs(body);
     const targetWords = parseWordList(wordsLine);
     const highlightSet = buildHighlightSet(targetWords);
@@ -523,15 +498,15 @@
   let lookupSeq = 0;
   async function lookupWord(word) {
     if (!word) return;
-    if (!cfg.key || !cfg.baseURL) {
+    if (!cfg.write.key || !cfg.write.baseURL) {
       $('lookup-mask').classList.add('hidden');
       openSettings();
-      alert('请先在设置里填写 API Key，才能点击查词');
+      alert('请先在设置里填写「写文模型」的 API Key，才能点击查词');
       return;
     }
     const seq = ++lookupSeq;
     showLookup(word, '查询中…');
-    const model = cfg.textModel || cfg.model;
+    const model = cfg.write.model;
     const prompt = [
       '请用中文准确简洁地解释这个英文单词或短语：' + word,
       '严格按以下格式输出：',
@@ -542,10 +517,10 @@
       '翻译: 例句的中文翻译'
     ].join('\n');
     try {
-      const url = cfg.baseURL.replace(/\/+$/, '') + '/chat/completions';
+      const url = cfg.write.baseURL.replace(/\/+$/, '') + '/chat/completions';
       const resp = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + cfg.key },
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + cfg.write.key },
         body: JSON.stringify({
           model: model,
           messages: [{ role: 'user', content: prompt }],
@@ -619,27 +594,13 @@
   function openHistory() { loadHistory(); $('history-mask').classList.remove('hidden'); }
   function closeHistory() { $('history-mask').classList.add('hidden'); }
 
-  function applyPreset(name) {
-    const p = PRESETS[name];
-    if (!p) return;
-    if (name === 'custom') {
-      // 清空让用户自己填，但保留当前 key
-      $('cfg-baseurl').value = '';
-      $('cfg-model').value = '';
-      $('cfg-textmodel').value = '';
-    } else {
-      $('cfg-baseurl').value = p.baseURL;
-      $('cfg-model').value = p.model;
-      $('cfg-textmodel').value = p.textModel || '';
-    }
-    highlightPreset();
-  }
-
   function saveSettings() {
-    cfg.baseURL = $('cfg-baseurl').value.trim();
-    cfg.model = $('cfg-model').value.trim();
-    cfg.textModel = $('cfg-textmodel').value.trim() || cfg.model;
-    cfg.key = $('cfg-key').value.trim();
+    cfg.vision.baseURL = $('cfg-vision-baseurl').value.trim();
+    cfg.vision.model = $('cfg-vision-model').value.trim();
+    cfg.vision.key = $('cfg-vision-key').value.trim();
+    cfg.write.baseURL = $('cfg-write-baseurl').value.trim();
+    cfg.write.model = $('cfg-write-model').value.trim();
+    cfg.write.key = $('cfg-write-key').value.trim();
     saveCfg();
     refreshGenerateBtn();
     closeSettings();
@@ -647,9 +608,9 @@
   }
 
   async function testConnection() {
-    const baseURL = $('cfg-baseurl').value.trim();
-    const model = $('cfg-model').value.trim();
-    const key = $('cfg-key').value.trim();
+    const baseURL = $('cfg-write-baseurl').value.trim();
+    const model = $('cfg-write-model').value.trim();
+    const key = $('cfg-write-key').value.trim();
     if (!baseURL || !model || !key) { alert('请先填全 baseURL、模型名和 key'); return; }
     const status = $('gen-status');
     status.classList.remove('hidden', 'error');
@@ -709,10 +670,6 @@
     $('btn-history-close').addEventListener('click', closeHistory);
     $('history-mask').addEventListener('click', (e) => {
       if (e.target === $('history-mask')) closeHistory();
-    });
-
-    document.querySelectorAll('.preset').forEach((b) => {
-      b.addEventListener('click', () => applyPreset(b.dataset.preset));
     });
 
     $('btn-copy').addEventListener('click', copyAll);
