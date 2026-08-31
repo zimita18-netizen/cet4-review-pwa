@@ -251,7 +251,7 @@
     '你是一名经验丰富的大学英语四级教师。请完成以下任务：',
     '',
     '1. 仔细识别图片中出现的所有「正在学习的英文单词或词组」。忽略界面按钮、中文释义、菜单等非学习内容，只提取用户要背的英文单词本身，并还原原形（如 studies→study）。',
-    '2. 用上面提取到的【所有】单词（清单里的每一个都必须用到，一个都不能漏）写一篇英文短文，分成 4~5 个自然段，每段几句话，段与段之间用空行隔开，总词数 300 词左右（词多就写长，务必保证每个目标词都出现在短文里）。要求：内容连贯、自然地道、适合中文大学生的四级水平；每个用到的目标单词都用 **两个星号** 加粗包起来，保持原形不要变形。除目标词之外，短文用到的其它所有词汇必须严格控制在大学英语四级词汇范围内，只用简单常见的四级词，严禁使用考研、GRE、托福、雅思级别的生僻词、学术术语或文学性生词。',
+    '2. 用识别到的这些单词写一篇【简短】的英文短文，总词数严格控制在 120~150 词，分成 3 个左右自然段，段与段之间用空行隔开。要求：尽量自然地多用上目标单词（不必强行每一个都用上），内容简洁连贯、贴合大学英语四级水平；每个用到的目标单词都用 **两个星号** 加粗包起来，保持原形不要变形。除目标词之外，其它词汇一律用最简单常见的四级词，严禁生僻词、学术术语、文学性生词，不要引入额外的难词。',
     '3. 只输出英文短文，不要输出中文翻译（翻译由用户自己处理）。',
     '',
     '请严格按以下格式输出，不要有多余解释：',
@@ -438,21 +438,6 @@
     try {
       const cns = await Promise.all(paragraphs.map((en) => translateParagraph(en)));
       segments.forEach((s, i) => { s.cn = (cns[i] || '').trim(); });
-
-      // 漏词兜底：检测没用上的目标词，补写一小段强制用上
-      const missing = findMissingWords(targetWords, paragraphs);
-      if (missing.length) {
-        try {
-          $('gen-status').classList.remove('hidden');
-          $('gen-status').textContent = '补充漏掉的目标词…(' + missing.join(', ') + ')';
-          const supEn = await supplementParagraph(missing);
-          if (supEn.trim()) {
-            const supCn = await translateParagraph(supEn);
-            segments.push({ en: supEn.trim(), cn: (supCn || '').trim() });
-          }
-        } catch (e2) { /* 补写失败则忽略 */ }
-      }
-
       renderSegments(segments, highlightSet);
       saveHistory(wordsLine, segments);
     } catch (e) {
