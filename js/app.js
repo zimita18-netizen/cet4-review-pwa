@@ -344,7 +344,9 @@
   // 用写文模型翻译一段英文
   async function translateParagraph(en) {
     const model = cfg.write.model;
-    const prompt = '把下面这段英文翻译成自然流畅的中文，只输出翻译结果，不要任何解释或原文：\n\n' + en;
+    // 去掉加粗标记再翻译，避免中文翻译里残留 **
+    const cleanEn = en.replace(/\*\*/g, '');
+    const prompt = '把下面这段英文翻译成自然流畅的中文，只输出翻译结果（纯中文，不要任何星号、不要解释、不要原文）：\n\n' + cleanEn;
     const url = cfg.write.baseURL.replace(/\/+$/, '') + '/chat/completions';
     const resp = await fetch(url, {
       method: 'POST',
@@ -361,7 +363,9 @@
       throw new Error(resp.status + '：' + t.slice(0, 120));
     }
     const data = await resp.json();
-    return (data.choices && data.choices[0].message && data.choices[0].message.content) || '';
+    const content = (data.choices && data.choices[0].message && data.choices[0].message.content) || '';
+    // 兜底：清理残留的星号
+    return content.replace(/\*+/g, '');
   }
 
   function renderSegments(segments, highlightSet) {
