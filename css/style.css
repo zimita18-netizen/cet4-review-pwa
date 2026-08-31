@@ -149,7 +149,13 @@ body { padding-bottom: env(safe-area-inset-bottom); }
   white-space: pre-wrap;
 }
 .essay .para-cn.hidden-cn { display: none; }
-.words-chip { margin-top: 14px; font-size: 12px; color: var(--muted); line-height: 1.6; word-break: break-all; }
+.words-chip { margin-top: 14px; font-size: 13px; color: var(--muted); line-height: 1.6; word-break: break-all; }
+.words-chip .usage-line { font-size: 13px; }
+.words-chip .usage-line b { color: var(--text); font-weight: 700; }
+.words-chip .usage-line b.u-ok { color: #2f9e5f; }
+.words-chip .usage-line b.u-miss { color: #d66a6a; }
+.words-chip .usage-miss { margin-top: 4px; font-size: 12px; color: #b05252; }
+.words-chip .usage-miss.ok { color: #2f9e5f; }
 
 /* 抽屉 */
 .drawer-mask {

@@ -395,6 +395,32 @@
     });
   }
 
+  // 统计：识别/已用/未用的单词
+  function analyzeUsage(words, paragraphs) {
+    const allText = paragraphs.join(' ').toLowerCase().replace(/\*\*/g, '');
+    const used = [], missed = [];
+    words.forEach((w) => {
+      if (w.length <= 2) { used.push(w); return; }
+      const forms = inflect(w);
+      const hit = Array.from(forms).some((f) => new RegExp('\\b' + f.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b').test(allText));
+      (hit ? used : missed).push(w);
+    });
+    return { used, missed };
+  }
+
+  // 渲染单词使用统计到结果区
+  function renderUsageChip(targetWords, paragraphs) {
+    const usage = analyzeUsage(targetWords, paragraphs);
+    const chip = $('words-chip');
+    let html = '<div class="usage-line">📊 识别 <b>' + targetWords.length + '</b> 词 · 已用 <b class="u-ok">' + usage.used.length + '</b> 词 · 未用 <b class="u-miss">' + usage.missed.length + '</b> 词</div>';
+    if (usage.missed.length) {
+      html += '<div class="usage-miss">⚠️ 未用到的词：' + escapeHtml(usage.missed.join('、')) + '</div>';
+    } else {
+      html += '<div class="usage-miss ok">✅ 全部目标词都用上了</div>';
+    }
+    chip.innerHTML = html;
+  }
+
   async function renderResult(wordsLine, essay) {
     // wordsLine：单词清单字符串；essay：分段英文（翻译由前端逐段完成）
     const body = (essay || '').trim();
@@ -405,7 +431,7 @@
     // 先渲染英文（中文默认隐藏、为空）
     const segments = paragraphs.map((en) => ({ en: en, cn: '' }));
     renderSegments(segments, highlightSet);
-    $('words-chip').textContent = wordsLine ? '目标单词：' + wordsLine : '';
+    renderUsageChip(targetWords, paragraphs);
     $('result-card').classList.remove('hidden');
     $('result-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
 
@@ -579,7 +605,7 @@
       div.appendChild(e);
       div.addEventListener('click', () => {
         renderSegments(segs, buildHighlightSet(parseWordList(item.words)));
-        $('words-chip').textContent = item.words ? '目标单词：' + item.words : '';
+        renderUsageChip(parseWordList(item.words), segs.map((s) => s.en));
         $('result-card').classList.remove('hidden');
         $('history-mask').classList.add('hidden');
         $('result-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
