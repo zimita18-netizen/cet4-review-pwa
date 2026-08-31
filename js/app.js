@@ -1,519 +1,388 @@
 /* =====================================================================
- * 单词巩固 · 每日趁热打铁  (PWA)
- * 配合「不背单词」App：背完当天新词后，花 60 秒趁热巩固。
+ * 单词短文 · 把今天的词串成故事  (PWA)
+ * 上传学习截图 → 可配置的多模态大模型识图提取单词 → 生成英文短文+中文翻译
  * ===================================================================== */
 (function () {
   'use strict';
 
-  /* ---------- 常量 ---------- */
-  const WORDS = window.CET4_WORDS || [];
-  const STORE_KEY = 'cet4gushu_v1';
-  const DEFAULT_DAILY = 30;
-  const HABIT_WINDOW = 7;          // 习惯记忆窗口（天）
+  const STORE_KEY = 'cet4essay_cfg_v1';
+  const HIST_KEY = 'cet4essay_hist_v1';
 
-  /* ---------- 状态 ---------- */
-  let state = load();
+  /* ---------- 预设模型模板 ---------- */
+  const PRESETS = {
+    glm: {
+      name: 'GLM-4V-Flash（免费）',
+      baseURL: 'https://open.bigmodel.cn/api/paas/v4',
+      model: 'glm-4v-flash'
+    },
+    deepseek: {
+      name: 'DeepSeek（VL）',
+      baseURL: 'https://api.deepseek.com',
+      model: 'deepseek-chat'
+    },
+    custom: {
+      name: '自定义',
+      baseURL: '',
+      model: ''
+    }
+  };
+
+  // 本地种子配置（js/config.js 由用户本地提供，含 key，不入库）
+  const seed = (typeof window !== 'undefined' && window.CONFIG_SEED) || {};
+
+  const DEFAULTS = {
+    baseURL: PRESETS.glm.baseURL,
+    model: PRESETS.glm.model,
+    key: seed.key || ''
+  };
+
+  let cfg = load();
 
   /* ---------- DOM ---------- */
   const $ = (id) => document.getElementById(id);
 
-  /* ---------- 状态读写 ---------- */
-  function defaultState() {
-    return {
-      cursor: 0,            // 词表进度：已背到第几个（0-based，指向下一个待巩固词）
-      dailyNew: DEFAULT_DAILY,
-      recentNew: [],        // 最近每天实际背的新词数
-      wordStates: {},       // { [index]: {g, ivl, due, ease, seen} }
-      plant: 0,             // 已认识词计数（植物成长）
-      streak: 0,
-      lastDate: '',
-      log: {}               // { 'YYYY-MM-DD': { newCount, mode } }
-    };
-  }
+  /* ---------- 配置读写 ---------- */
   function load() {
     try {
       const raw = localStorage.getItem(STORE_KEY);
-      if (raw) {
-        const s = JSON.parse(raw);
-        return Object.assign(defaultState(), s);
-      }
+      if (raw) return Object.assign({}, DEFAULTS, JSON.parse(raw));
     } catch (e) { /* ignore */ }
-    return defaultState();
+    return Object.assign({}, DEFAULTS);
   }
-  function save() {
-    try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch (e) { /* ignore */ }
-  }
-
-  function today() {
-    const d = new Date();
-    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-  }
-  function nowTs() { return Date.now(); }
-  function dayTs(t) { const d = new Date(t); d.setHours(0,0,0,0); return d.getTime(); }
-
-  /* ---------- 习惯量 ---------- */
-  function habitNew() {
-    if (state.recentNew && state.recentNew.length) {
-      const sum = state.recentNew.reduce((a, b) => a + b, 0);
-      return Math.max(1, Math.round(sum / state.recentNew.length));
-    }
-    return state.dailyNew;
+  function saveCfg() {
+    try { localStorage.setItem(STORE_KEY, JSON.stringify(cfg)); } catch (e) { /* ignore */ }
   }
 
-  function wordAt(i) {
-    return WORDS[i] || null;
-  }
-  function wordHead(i) {
-    const w = wordAt(i);
-    return w ? w[0] : '?';
-  }
+  /* ---------- 视图 ---------- */
+  let currentImage = null;   // dataURI
 
-  /* ---------- 视图切换 ---------- */
-  function show(id) {
-    ['view-home', 'view-quiz', 'view-done', 'view-wordlist'].forEach((v) => {
-      $(v).classList.toggle('hidden', v !== id);
-    });
-    window.scrollTo(0, 0);
-  }
-
-  /* =====================================================================
-   * 锚点校正：词表浏览 + 搜索
-   * ===================================================================== */
-  function openWordlist() {
-    $('wl-search').value = '';
-    renderWordlist('');
-    show('view-wordlist');
-  }
-
-  function renderWordlist(filter) {
-    const box = $('wl-list');
-    box.innerHTML = '';
-    const f = (filter || '').trim().toLowerCase();
-    let shown = 0;
-    const MAX = 200;
-    for (let i = 0; i < WORDS.length && shown < MAX; i++) {
-      const w = WORDS[i];
-      if (f && w[0].toLowerCase().indexOf(f) < 0) continue;
-      shown++;
-      const item = document.createElement('div');
-      item.className = 'wl-item';
-      const idxSpan = document.createElement('span');
-      idxSpan.className = 'wl-idx';
-      idxSpan.textContent = (i + 1);
-      const wordSpan = document.createElement('span');
-      wordSpan.className = 'wl-word';
-      wordSpan.textContent = w[0];
-      const transSpan = document.createElement('span');
-      transSpan.className = 'wl-trans';
-      transSpan.textContent = w[2] || '';
-      item.appendChild(idxSpan);
-      item.appendChild(wordSpan);
-      item.appendChild(transSpan);
-      item.addEventListener('click', () => setAnchor(i));
-      box.appendChild(item);
-    }
-    if (shown === 0) {
-      box.innerHTML = '<p class="sub" style="text-align:center;padding:20px">没找到，换个词试试（支持模糊搜索）</p>';
-    }
-  }
-
-  function setAnchor(i) {
-    // 把锚点设到该词之后（即"刚背完这个词"）
-    state.cursor = i + 1;
-    save();
-    show('view-home');
-    renderHome();
-    $('sub-tip').textContent = '已对齐到「' + wordHead(i) + '」，下次从这里继续 ✅';
-  }
-
-  /* =====================================================================
-   * 首页
-   * ===================================================================== */
-  let sliderN = DEFAULT_DAILY;   // 本次要巩固的新词数
-
-  function renderHome() {
-    updatePlant();
-    $('greeting').textContent = '嗨，今天在不背单词背完新词了吗？';
-    $('sub-tip').textContent = '背完后花 60 秒，把今天的新词锁进脑子。';
-
-    // 锚点
-    const cur = state.cursor;
-    const anchorHead = cur > 0 ? wordHead(cur - 1) : '词表开头';
-    $('anchor-word').textContent = anchorHead + '（第 ' + cur + ' 个）';
-
-    // 滑块：默认习惯量
-    sliderN = habitNew();
-    const maxN = Math.max(40, sliderN * 2 + 10);
-    const slider = $('end-slider');
-    slider.max = Math.min(maxN, 100);
-    if (sliderN > Number(slider.max)) slider.max = sliderN;
-    slider.value = sliderN;
-    updateRange(sliderN);
-
-    // 统计
-    const known = Object.keys(state.wordStates).filter((k) => {
-      const s = state.wordStates[k];
-      return s && s.g === 0;
-    }).length;
-    const dueCount = countDue();
-    $('stat-known').textContent = known;
-    $('stat-due').textContent = dueCount;
-    $('stat-days').textContent = state.streak;
-  }
-
-  function updateRange(n) {
-    n = Math.max(0, Math.min(n, state.dailyNew * 5 || 100));
-    $('range-count').textContent = n + ' 个';
-    const box = $('range-words');
-    box.innerHTML = '';
-    const start = state.cursor;
-    const showN = Math.min(n, 24); // 最多展示 24 个词片
-    for (let i = 0; i < showN; i++) {
-      const w = wordAt(start + i);
-      const span = document.createElement('span');
-      span.className = 'w' + (i < n ? ' active' : '');
-      span.textContent = w ? w[0] : '…';
-      box.appendChild(span);
-    }
-    if (n > showN) {
-      const more = document.createElement('span');
-      more.className = 'w';
-      more.textContent = '…+' + (n - showN);
-      box.appendChild(more);
-    }
-  }
-
-  function updatePlant() {
-    const lv = 1 + Math.floor(state.plant / 100);
-    const emojis = ['🌱', '🌿', '🌳', '🌲', '🍀', '🌸', '🌻', '⭐'];
-    $('plant-emoji').textContent = emojis[Math.min(lv - 1, emojis.length - 1)];
-    $('plant-level').textContent = 'Lv.' + lv;
-  }
-
-  /* ---------- 复习队列（到期词） ---------- */
-  function countDue() {
-    const t = nowTs();
-    return Object.keys(state.wordStates).filter((k) => {
-      const s = state.wordStates[k];
-      return s && s.due && s.due <= t;
-    }).length;
-  }
-  function dueIndices(limit) {
-    const t = nowTs();
-    const list = Object.keys(state.wordStates)
-      .filter((k) => { const s = state.wordStates[k]; return s && s.due && s.due <= t; })
-      .map(Number)
-      .sort((a, b) => (state.wordStates[a].due - state.wordStates[b].due));
-    return limit ? list.slice(0, limit) : list;
-  }
-
-  /* =====================================================================
-   * 巩固流程
-   * ===================================================================== */
-  let quizList = [];       // 本轮要巩固的词 index 列表
-  let quizMode = 'new';    // 'new' | 'review'
-  let quizPos = 0;
-  let gradeStats = { good: 0, mid: 0, bad: 0 };
-
-  function startQuiz(mode) {
-    quizMode = mode;
-    gradeStats = { good: 0, mid: 0, bad: 0 };
-
-    if (mode === 'new') {
-      const start = state.cursor;
-      quizList = [];
-      for (let i = 0; i < sliderN; i++) {
-        if (wordAt(start + i)) quizList.push(start + i);
-      }
-      // 只练有词的位置
-      quizList = quizList.filter((idx) => wordAt(idx));
-    } else {
-      // 复习模式：到期词
-      quizList = dueIndices(10);
-    }
-
-    if (!quizList.length) {
-      if (mode === 'new') {
-        $('greeting').textContent = '这段没有可巩固的词，先把锚点往后调一点？';
-      } else {
-        $('greeting').textContent = '今天没有到期要复习的词，太棒了！';
-        $('sub-tip').textContent = '去不背单词背几个新词吧，或者休息一下～';
-      }
-      renderHome();
-      show('view-home');
-      return;
-    }
-
-    quizPos = 0;
-    $('quiz-progress').textContent = '1 / ' + quizList.length;
-    show('view-quiz');
-    showFlip();
-  }
-
-  function showFlip() {
-    $('stage-flip').classList.remove('hidden');
-    $('stage-choice').classList.add('hidden');
-    const idx = quizList[quizPos];
-    const w = wordAt(idx);
-    $('flip-word').textContent = w[0];
-    $('flip-phone').textContent = w[1] ? '/' + w[1] + '/' : '';
-    $('flip-trans').textContent = w[2];
-    $('flip-sent-en').textContent = w[3] || '';
-    $('flip-sent-cn').textContent = w[4] || '';
-    $('flip-answer').classList.add('hidden');
-    $('flip-btns').classList.add('hidden');
-    $('btn-reveal').classList.remove('hidden');
-  }
-
-  function showChoice() {
-    // 只对"模糊/不认识"的词出四选一；"认识"的跳过直接记录
-    const idx = quizList[quizPos];
-    const target = wordAt(idx);
-    buildChoice(idx, target);
-    $('stage-flip').classList.add('hidden');
-    $('stage-choice').classList.remove('hidden');
-  }
-
-  /* ---------- 四选一出题 ---------- */
-  function buildChoice(idx, target) {
-    $('choice-word').textContent = target[0];
-    $('choice-phone').textContent = target[1] ? '/' + target[1] + '/' : '';
-    $('choice-feedback').classList.add('hidden');
-    $('choice-feedback').innerHTML = '';
-    $('btn-next').classList.add('hidden');
-
-    // 生成 3 个干扰项（随机从其他词里取中文释义）
-    const opts = [target[2]];
-    let guard = 0;
-    while (opts.length < 4 && guard < 200) {
-      guard++;
-      const ri = Math.floor(Math.random() * WORDS.length);
-      if (ri === idx) continue;
-      const cand = wordAt(ri);
-      if (!cand || !cand[2]) continue;
-      if (opts.indexOf(cand[2]) >= 0) continue;
-      opts.push(cand[2]);
-    }
-    // 不足 4 个时补占位
-    while (opts.length < 4) opts.push('（无释义）');
-    // 洗牌
-    shuffle(opts);
-
-    const box = $('choice-options');
-    box.innerHTML = '';
-    opts.forEach((o) => {
-      const btn = document.createElement('button');
-      btn.className = 'opt';
-      btn.textContent = o;
-      btn.addEventListener('click', () => answerChoice(btn, o, target[2]));
-      box.appendChild(btn);
-    });
-  }
-
-  function answerChoice(btn, chosen, correct) {
-    const opts = document.querySelectorAll('#choice-options .opt');
-    opts.forEach((o) => o.classList.add('disabled'));
-    const isRight = chosen === correct;
-    if (isRight) {
-      btn.classList.add('right');
-      $('choice-feedback').classList.remove('hidden');
-      $('choice-feedback').innerHTML = '✅ 正确答案：' + correct;
-    } else {
-      btn.classList.add('wrong');
-      opts.forEach((o) => { if (o.textContent === correct) o.classList.add('right'); });
-      $('choice-feedback').classList.remove('hidden');
-      $('choice-feedback').innerHTML = '❌ 正确是：' + correct;
-    }
-    // 记录：答对算"认识"，答错算"模糊"
-    const idx = quizList[quizPos];
-    if (isRight) {
-      gradeStats.good++;
-      scheduleWord(idx, 0);
-    } else {
-      gradeStats.mid++;
-      scheduleWord(idx, 1);
-    }
-    $('btn-next').classList.remove('hidden');
-  }
-
-  /* ---------- 评分 → 间隔调度（简化 SM-2） ---------- */
-  function scheduleWord(idx, grade) {
-    const cur = state.wordStates[idx] || { g: 1, ivl: 0, ease: 2.5, seen: 0, due: 0 };
-    cur.seen = (cur.seen || 0) + 1;
-    let ivl, ease = cur.ease;
-    if (grade === 0) {           // 认识
-      ease = Math.min(3.0, ease + 0.1);
-      ivl = cur.ivl === 0 ? 3 : Math.round(cur.ivl * ease);
-    } else if (grade === 1) {    // 模糊
-      ease = Math.max(1.3, ease - 0.2);
-      ivl = 1;
-    } else {                     // 不认识
-      ease = Math.max(1.3, ease - 0.3);
-      ivl = 0;
-    }
-    cur.g = grade;
-    cur.ease = ease;
-    cur.ivl = ivl;
-    cur.due = nowTs() + ivl * 86400000;
-    state.wordStates[idx] = cur;
-    if (grade === 0) state.plant += 1;
-  }
-
-  /* ---------- 流程推进 ---------- */
-  function onGrade(grade) {
-    const idx = quizList[quizPos];
-    if (grade === 0) gradeStats.good++;
-    else if (grade === 1) gradeStats.mid++;
-    else gradeStats.bad++;
-    scheduleWord(idx, grade);
-
-    if (grade === 0) {
-      nextQuiz();               // 认识的直接下一个
-    } else {
-      showChoice();             // 模糊/不认识 → 四选一加深
-    }
-  }
-
-  function gotoNext() {
-    nextQuiz();
-  }
-
-  function nextQuiz() {
-    quizPos++;
-    if (quizPos >= quizList.length) {
-      finishQuiz();
-      return;
-    }
-    $('quiz-progress').textContent = (quizPos + 1) + ' / ' + quizList.length;
-    showFlip();
-  }
-
-  function finishQuiz() {
-    // 新词模式：推进 cursor
-    if (quizMode === 'new') {
-      const start = state.cursor;
-      state.cursor = start + sliderN;
-      state.recentNew.push(sliderN);
-      if (state.recentNew.length > HABIT_WINDOW) state.recentNew.shift();
-      state.log[today()] = { newCount: sliderN, mode: 'new' };
-    } else {
-      state.log[today()] = { newCount: 0, mode: 'review' };
-    }
-    // 坚持天数
-    const t = today();
-    if (state.lastDate !== t) {
-      if (state.lastDate) {
-        const diff = (dayTs(new Date()) - dayTs(new Date(state.lastDate))) / 86400000;
-        state.streak = diff === 1 ? state.streak + 1 : 1;
-      } else {
-        state.streak = 1;
-      }
-      state.lastDate = t;
-    }
-    save();
-    renderDone();
-    show('view-done');
-  }
-
-  function renderDone() {
-    const total = gradeStats.good + gradeStats.mid + gradeStats.bad;
-    const goodRate = total ? Math.round(gradeStats.good / total * 100) : 0;
-    let emoji, title;
-    if (gradeStats.bad === 0 && gradeStats.mid === 0) { emoji = '🌟'; title = '全对，漂亮！'; }
-    else if (goodRate >= 70) { emoji = '✨'; title = '很棒，继续保持！'; }
-    else { emoji = '💪'; title = '稳住，明天就熟了！'; }
-    $('done-emoji').textContent = emoji;
-    $('done-title').textContent = title;
-    $('done-text').textContent = quizMode === 'new'
-      ? '今天 ' + quizList.length + ' 个新词已过了一遍。'
-      : '今天复习了 ' + quizList.length + ' 个难点词。';
-    $('done-stats').innerHTML =
-      '<span class="chip">认识 <b>' + gradeStats.good + '</b></span>' +
-      '<span class="chip">模糊 <b>' + gradeStats.mid + '</b></span>' +
-      '<span class="chip">不认识 <b>' + gradeStats.bad + '</b></span>';
-  }
-
-  /* =====================================================================
-   * 导出 / 导入
-   * ===================================================================== */
-  function doExport() {
-    const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = '单词巩固备份-' + today() + '.json';
-    a.click();
-    URL.revokeObjectURL(a.href);
-  }
-  function doImport(file) {
-    const reader = new FileReader();
-    reader.onload = () => {
-      try {
-        const s = JSON.parse(reader.result);
-        state = Object.assign(defaultState(), s);
-        save();
-        renderHome();
-        $('sub-tip').textContent = '已导入备份 ✅';
-      } catch (e) {
-        alert('导入失败：文件格式不对');
-      }
-    };
-    reader.readAsText(file);
-  }
-
-  /* =====================================================================
-   * 工具
-   * ===================================================================== */
-  function shuffle(arr) {
-    for (let i = arr.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [arr[i], arr[j]] = [arr[j], arr[i]];
-    }
-  }
-
-  /* =====================================================================
-   * 事件绑定
-   * ===================================================================== */
-  function bind() {
-    $('end-slider').addEventListener('input', (e) => {
-      sliderN = Number(e.target.value);
-      updateRange(sliderN);
-      $('range-count').textContent = sliderN + ' 个';
-    });
-
-    $('btn-start').addEventListener('click', () => startQuiz('new'));
-    $('btn-review-only').addEventListener('click', () => startQuiz('review'));
-
-    $('btn-reveal').addEventListener('click', () => {
-      $('btn-reveal').classList.add('hidden');
-      $('flip-answer').classList.remove('hidden');
-      $('flip-btns').classList.remove('hidden');
-    });
-    document.querySelectorAll('[data-grade]').forEach((b) => {
-      b.addEventListener('click', () => onGrade(Number(b.dataset.grade)));
-    });
-    $('btn-next').addEventListener('click', gotoNext);
-    $('btn-home').addEventListener('click', () => { renderHome(); show('view-home'); });
-
-    $('btn-export').addEventListener('click', doExport);
-    $('btn-import').addEventListener('click', () => $('import-file').click());
-    $('import-file').addEventListener('change', (e) => {
-      if (e.target.files && e.target.files[0]) doImport(e.target.files[0]);
-      e.target.value = '';
-    });
-
-    // 锚点校正
-    $('btn-align').addEventListener('click', openWordlist);
-    $('btn-wl-back').addEventListener('click', () => { renderHome(); show('view-home'); });
-    $('wl-search').addEventListener('input', (e) => renderWordlist(e.target.value));
-  }
-
-  /* =====================================================================
-   * 初始化
-   * ===================================================================== */
   function init() {
     bind();
-    renderHome();
-    show('view-home');
+    loadHistory();
+    syncCfgToUI();
+    refreshGenerateBtn();
+  }
+
+  function syncCfgToUI() {
+    $('cfg-baseurl').value = cfg.baseURL;
+    $('cfg-model').value = cfg.model;
+    $('cfg-key').value = cfg.key;
+    highlightPreset();
+  }
+  function highlightPreset() {
+    const btns = document.querySelectorAll('.preset');
+    btns.forEach((b) => b.classList.remove('active'));
+    let active = 'custom';
+    if (cfg.baseURL === PRESETS.glm.baseURL && cfg.model === PRESETS.glm.model) active = 'glm';
+    else if (cfg.baseURL === PRESETS.deepseek.baseURL && cfg.model === PRESETS.deepseek.model) active = 'deepseek';
+    const target = document.querySelector('.preset[data-preset="' + active + '"]');
+    if (target) target.classList.add('active');
+  }
+
+  /* ---------- 图片处理 ---------- */
+  function handleFile(file) {
+    if (!file) return;
+    if (!/^image\//.test(file.type)) { alert('请选择图片文件'); return; }
+    const reader = new FileReader();
+    reader.onload = () => {
+      currentImage = reader.result;
+      $('preview-img').src = currentImage;
+      $('preview-box').classList.remove('hidden');
+      $('upload-zone').classList.add('hidden');
+      $('upload-text').textContent = '图片已就绪';
+      refreshGenerateBtn();
+    };
+    reader.readAsDataURL(file);
+  }
+  function refreshGenerateBtn() {
+    $('btn-generate').disabled = !(currentImage && cfg.key);
+  }
+
+  /* ---------- 生成短文 ---------- */
+  function escapeHtml(s) {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+  function renderMarkdownBold(s) {
+    // **词** → <b>词</b>
+    return escapeHtml(s).replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
+  }
+
+  const PROMPT = [
+    '你是一名经验丰富的大学英语四级教师。请完成以下任务：',
+    '',
+    '1. 仔细识别图片中出现的所有「正在学习的英文单词或词组」。忽略界面按钮、中文释义、菜单等非学习内容，只提取用户要背的英文单词本身，并还原原形（如 studies→study）。',
+    '2. 用提取到的这些单词，写一篇 130~180 词的英文短文。要求：内容连贯、自然地道、适合中文大学生的四级阅读水平；每个目标单词在文中首次出现时用 **两个星号** 加粗包起来。',
+    '3. 在短文之后另起一行写「===翻译===」，下面输出短文的完整中文翻译。',
+    '',
+    '请严格按以下格式输出，不要有多余解释：',
+    '',
+    '单词: word1, word2, word3',
+    '',
+    '短文:',
+    '（英文短文，目标词用 **word** 加粗）',
+    '',
+    '===翻译===',
+    '（中文翻译）'
+  ].join('\n');
+
+  async function generate() {
+    if (!currentImage) return;
+    if (!cfg.key) { openSettings(); alert('请先填写 API Key'); return; }
+    if (!cfg.baseURL || !cfg.model) { openSettings(); alert('请先填写 baseURL 和模型名'); return; }
+
+    const status = $('gen-status');
+    status.classList.remove('hidden');
+    status.classList.remove('error');
+    status.textContent = '正在识别单词并生成短文，稍等几秒…';
+    $('btn-generate').disabled = true;
+
+    try {
+      const url = cfg.baseURL.replace(/\/+$/, '') + '/chat/completions';
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + cfg.key
+        },
+        body: JSON.stringify({
+          model: cfg.model,
+          messages: [{
+            role: 'user',
+            content: [
+              { type: 'image_url', image_url: { url: currentImage } },
+              { type: 'text', text: PROMPT }
+            ]
+          }],
+          temperature: 0.7,
+          max_tokens: 1024
+        })
+      });
+
+      if (!resp.ok) {
+        const txt = await resp.text();
+        throw new Error('调用失败(' + resp.status + ')：' + txt.slice(0, 200));
+      }
+
+      const data = await resp.json();
+      const text = data.choices && data.choices[0] && data.choices[0].message
+        ? data.choices[0].message.content
+        : '';
+      if (!text) throw new Error('模型没有返回内容');
+
+      renderResult(text);
+      status.classList.add('hidden');
+    } catch (e) {
+      status.classList.add('error');
+      status.textContent = '出错：' + e.message + '\n（可检查 key / baseURL / 模型名是否正确）';
+    } finally {
+      refreshGenerateBtn();
+    }
+  }
+
+  function renderResult(text) {
+    // 解析：单词清单 + 短文 + 翻译
+    let wordsLine = '';
+    let essay = text;
+    let trans = '';
+
+    const wordsMatch = text.match(/单词[:：]\s*([^\n]+)/);
+    if (wordsMatch) wordsLine = wordsMatch[1].trim();
+
+    // 分割短文与翻译
+    let en = text;
+    let cn = '';
+    const sepIdx = text.indexOf('===翻译===');
+    if (sepIdx >= 0) {
+      en = text.slice(0, sepIdx);
+      cn = text.slice(sepIdx + '===翻译==='.length);
+    }
+    // 去掉 "短文:" 标签
+    en = en.replace(/^[\s\S]*?短文[:：]\s*/, '').trim();
+    cn = cn.trim();
+
+    $('essay-en').innerHTML = renderMarkdownBold(en);
+    $('essay-cn').textContent = cn;
+    $('words-chip').textContent = wordsLine ? '目标单词：' + wordsLine : '';
+
+    $('result-card').classList.remove('hidden');
+    saveHistory(wordsLine, en, cn);
+    $('result-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  /* ---------- 复制 ---------- */
+  function copyAll() {
+    const en = $('essay-en').innerText;
+    const cn = $('essay-cn').textContent;
+    const words = $('words-chip').textContent;
+    const full = [words, '', en, '', '===翻译===', cn].filter(Boolean).join('\n');
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(full).then(() => toast('已复制全文 ✓'));
+    } else {
+      // 兜底
+      const ta = document.createElement('textarea');
+      ta.value = full;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      toast('已复制全文 ✓');
+    }
+  }
+
+  function toast(msg) {
+    const el = $('gen-status');
+    el.textContent = msg;
+    el.classList.remove('hidden', 'error');
+    setTimeout(() => el.classList.add('hidden'), 1800);
+  }
+
+  /* ---------- 历史记录 ---------- */
+  function saveHistory(words, en, cn) {
+    let list = [];
+    try { list = JSON.parse(localStorage.getItem(HIST_KEY) || '[]'); } catch (e) { /* ignore */ }
+    list.unshift({
+      date: new Date().toLocaleString('zh-CN'),
+      words: words,
+      en: en,
+      cn: cn
+    });
+    list = list.slice(0, 30);
+    try { localStorage.setItem(HIST_KEY, JSON.stringify(list)); } catch (e) { /* ignore */ }
+  }
+
+  function loadHistory() {
+    const box = $('history-list');
+    let list = [];
+    try { list = JSON.parse(localStorage.getItem(HIST_KEY) || '[]'); } catch (e) { /* ignore */ }
+    if (!list.length) {
+      box.innerHTML = '<div class="history-empty">还没有历史记录</div>';
+      return;
+    }
+    box.innerHTML = '';
+    list.forEach((item) => {
+      const div = document.createElement('div');
+      div.className = 'history-item';
+      const d = document.createElement('div');
+      d.className = 'h-date';
+      d.textContent = item.date + (item.words ? ' · ' + item.words : '');
+      const e = document.createElement('div');
+      e.className = 'h-excerpt';
+      e.innerHTML = renderMarkdownBold(item.en);
+      div.appendChild(d);
+      div.appendChild(e);
+      div.addEventListener('click', () => {
+        $('essay-en').innerHTML = renderMarkdownBold(item.en);
+        $('essay-cn').textContent = item.cn;
+        $('words-chip').textContent = item.words ? '目标单词：' + item.words : '';
+        $('result-card').classList.remove('hidden');
+        $('history-mask').classList.add('hidden');
+        $('result-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+      box.appendChild(div);
+    });
+  }
+
+  /* ---------- 设置 ---------- */
+  function openSettings() { $('settings-mask').classList.remove('hidden'); }
+  function closeSettings() { $('settings-mask').classList.add('hidden'); }
+  function openHistory() { loadHistory(); $('history-mask').classList.remove('hidden'); }
+  function closeHistory() { $('history-mask').classList.add('hidden'); }
+
+  function applyPreset(name) {
+    const p = PRESETS[name];
+    if (!p) return;
+    if (name === 'custom') {
+      // 清空让用户自己填，但保留当前 key
+      $('cfg-baseurl').value = '';
+      $('cfg-model').value = '';
+    } else {
+      $('cfg-baseurl').value = p.baseURL;
+      $('cfg-model').value = p.model;
+    }
+    highlightPreset();
+  }
+
+  function saveSettings() {
+    cfg.baseURL = $('cfg-baseurl').value.trim();
+    cfg.model = $('cfg-model').value.trim();
+    cfg.key = $('cfg-key').value.trim();
+    saveCfg();
+    refreshGenerateBtn();
+    closeSettings();
+    toast('设置已保存 ✓');
+  }
+
+  async function testConnection() {
+    const baseURL = $('cfg-baseurl').value.trim();
+    const model = $('cfg-model').value.trim();
+    const key = $('cfg-key').value.trim();
+    if (!baseURL || !model || !key) { alert('请先填全 baseURL、模型名和 key'); return; }
+    const status = $('gen-status');
+    status.classList.remove('hidden', 'error');
+    status.textContent = '测试中…';
+    try {
+      const url = baseURL.replace(/\/+$/, '') + '/chat/completions';
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + key
+        },
+        body: JSON.stringify({
+          model: model,
+          messages: [{ role: 'user', content: '回复"ok"两个字' }],
+          max_tokens: 8
+        })
+      });
+      if (!resp.ok) {
+        const txt = await resp.text();
+        throw new Error(resp.status + ' ' + txt.slice(0, 120));
+      }
+      const data = await resp.json();
+      const out = data.choices && data.choices[0].message.content;
+      status.textContent = '连接成功 ✓ 模型回复：' + out;
+    } catch (e) {
+      status.classList.add('error');
+      status.textContent = '连接失败：' + e.message;
+    }
+  }
+
+  /* ---------- 事件 ---------- */
+  function bind() {
+    $('file-input').addEventListener('change', (e) => {
+      if (e.target.files && e.target.files[0]) handleFile(e.target.files[0]);
+    });
+    // 也支持点击已选图片重新换图
+    $('btn-remove').addEventListener('click', () => {
+      currentImage = null;
+      $('file-input').value = '';
+      $('preview-box').classList.add('hidden');
+      $('upload-zone').classList.remove('hidden');
+      $('upload-text').textContent = '点这里，上传今天背单词的截图';
+      refreshGenerateBtn();
+    });
+
+    $('btn-generate').addEventListener('click', generate);
+
+    $('btn-settings').addEventListener('click', openSettings);
+    $('btn-settings-close').addEventListener('click', closeSettings);
+    $('settings-mask').addEventListener('click', (e) => {
+      if (e.target === $('settings-mask')) closeSettings();
+    });
+    $('btn-save-cfg').addEventListener('click', saveSettings);
+    $('btn-test').addEventListener('click', testConnection);
+
+    $('btn-history').addEventListener('click', openHistory);
+    $('btn-history-close').addEventListener('click', closeHistory);
+    $('history-mask').addEventListener('click', (e) => {
+      if (e.target === $('history-mask')) closeHistory();
+    });
+
+    document.querySelectorAll('.preset').forEach((b) => {
+      b.addEventListener('click', () => applyPreset(b.dataset.preset));
+    });
+
+    $('btn-copy').addEventListener('click', copyAll);
   }
 
   if (document.readyState === 'loading') {

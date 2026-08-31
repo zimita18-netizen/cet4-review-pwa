@@ -1,11 +1,10 @@
-/* 单词巩固 · Service Worker（离线缓存） */
-const CACHE = 'cet4gushu-v1';
+/* 单词短文 · Service Worker（离线缓存） */
+const CACHE = 'cet4essay-v1';
 const ASSETS = [
   './',
   './index.html',
   './css/style.css',
   './js/app.js',
-  './js/words.js',
   './manifest.webmanifest',
   './icons/icon-180.png',
   './icons/icon-192.png',
