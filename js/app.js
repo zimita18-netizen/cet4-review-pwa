@@ -58,7 +58,7 @@
   }
 
   /* ---------- 视图 ---------- */
-  let currentImage = null;   // dataURI
+  let currentImages = [];   // dataURI 数组（支持多张截图）
 
   function init() {
     bind();
@@ -85,24 +85,55 @@
   }
 
   /* ---------- 图片处理 ---------- */
-  function handleFile(file) {
-    if (!file) return;
-    if (!/^image\//.test(file.type)) { alert('请选择图片文件'); return; }
-    // 只保留一张：每次替换 currentImage，不做多选
-    const reader = new FileReader();
-    reader.onload = () => {
-      currentImage = reader.result;
-      $('preview-img').src = currentImage;
-      $('preview-box').classList.remove('hidden');
-      $('upload-zone').classList.add('hidden');
-      $('upload-text').textContent = '图片已就绪（一次一张，点「重选」换图）';
-      refreshGenerateBtn();
+  function handleFiles(fileList) {
+    const files = Array.from(fileList).filter((f) => /^image\//.test(f.type));
+    if (!files.length) { alert('请选择图片'); return; }
+    Promise.all(files.map((f) => new Promise((res, rej) => {
+      const r = new FileReader();
+      r.onload = () => res(r.result);
+      r.onerror = rej;
+      r.readAsDataURL(f);
+    }))).then((uris) => {
+      currentImages = currentImages.concat(uris);
+      renderPreview();
       $('file-input').value = '';
-    };
-    reader.readAsDataURL(file);
+    }).catch(() => alert('读取图片失败'));
   }
+
+  function renderPreview() {
+    if (!currentImages.length) {
+      $('preview-box').classList.add('hidden');
+      $('upload-zone').classList.remove('hidden');
+      refreshGenerateBtn();
+      return;
+    }
+    $('preview-box').classList.remove('hidden');
+    $('upload-zone').classList.add('hidden');
+    const grid = $('preview-grid');
+    grid.innerHTML = '';
+    currentImages.forEach((src, idx) => {
+      const wrap = document.createElement('div');
+      wrap.className = 'thumb-wrap';
+      const img = document.createElement('img');
+      img.src = src;
+      img.className = 'thumb';
+      const del = document.createElement('button');
+      del.className = 'thumb-del';
+      del.textContent = '✕';
+      del.addEventListener('click', () => {
+        currentImages.splice(idx, 1);
+        renderPreview();
+      });
+      wrap.appendChild(img);
+      wrap.appendChild(del);
+      grid.appendChild(wrap);
+    });
+    $('upload-text').textContent = '已选 ' + currentImages.length + ' 张，可继续添加或点「清空重选」';
+    refreshGenerateBtn();
+  }
+
   function refreshGenerateBtn() {
-    $('btn-generate').disabled = !(currentImage && cfg.key);
+    $('btn-generate').disabled = !(currentImages.length && cfg.key);
   }
 
   /* ---------- 生成短文 ---------- */
@@ -166,18 +197,21 @@
   ].join('\n');
 
   async function generate() {
-    if (!currentImage) return;
+    if (!currentImages.length) return;
     if (!cfg.key) { openSettings(); alert('请先填写 API Key'); return; }
     if (!cfg.baseURL || !cfg.model) { openSettings(); alert('请先填写 baseURL 和模型名'); return; }
 
     const status = $('gen-status');
     status.classList.remove('hidden');
     status.classList.remove('error');
-    status.textContent = '正在识别单词并生成短文，稍等几秒…';
+    status.textContent = '正在识别 ' + currentImages.length + ' 张截图并生成短文，稍等几秒…';
     $('btn-generate').disabled = true;
 
     try {
       const url = cfg.baseURL.replace(/\/+$/, '') + '/chat/completions';
+      // 多张图依次放入 content，再附文字指令
+      const content = currentImages.map((uri) => ({ type: 'image_url', image_url: { url: uri } }));
+      content.push({ type: 'text', text: PROMPT });
       const resp = await fetch(url, {
         method: 'POST',
         headers: {
@@ -188,10 +222,7 @@
           model: cfg.model,
           messages: [{
             role: 'user',
-            content: [
-              { type: 'image_url', image_url: { url: currentImage } },
-              { type: 'text', text: PROMPT }
-            ]
+            content: content
           }],
           temperature: 0.7,
           max_tokens: 1024
@@ -450,16 +481,15 @@
   /* ---------- 事件 ---------- */
   function bind() {
     $('file-input').addEventListener('change', (e) => {
-      if (e.target.files && e.target.files[0]) handleFile(e.target.files[0]);
+      if (e.target.files && e.target.files.length) handleFiles(e.target.files);
     });
-    // 也支持点击已选图片重新换图
+    // 清空重选
     $('btn-remove').addEventListener('click', () => {
-      currentImage = null;
+      currentImages = [];
       $('file-input').value = '';
-      $('preview-box').classList.add('hidden');
-      $('upload-zone').classList.remove('hidden');
+      $('preview-grid').innerHTML = '';
       $('upload-text').textContent = '点这里，上传今天背单词的截图';
-      refreshGenerateBtn();
+      renderPreview();
     });
 
     $('btn-generate').addEventListener('click', generate);

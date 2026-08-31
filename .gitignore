@@ -4,6 +4,8 @@ node_modules/
 js/words.js
 js/config.js
 test_api.js
+multimg_test.js
+icon_from_photo.py
 download.js
 convert.js
 gen_icon.py

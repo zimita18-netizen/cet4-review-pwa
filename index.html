@@ -27,14 +27,14 @@
     <!-- 上传区 -->
     <section class="card">
       <label class="upload-zone" id="upload-zone" for="file-input">
-        <input type="file" id="file-input" accept="image/*" style="display:none">
+        <input type="file" id="file-input" accept="image/*" multiple style="display:none">
         <div class="upload-icon">🖼️</div>
         <div class="upload-text" id="upload-text">点这里，上传今天背单词的截图</div>
-        <div class="upload-sub">（支持拍照或从相册选）</div>
+        <div class="upload-sub">（可从相册多选，一次传多张）</div>
       </label>
       <div class="preview hidden" id="preview-box">
-        <img id="preview-img" alt="预览">
-        <button class="btn-remove" id="btn-remove">✕ 重选</button>
+        <div class="preview-grid" id="preview-grid"></div>
+        <button class="btn-remove" id="btn-remove">✕ 清空重选</button>
       </div>
       <button class="btn btn-primary btn-wide" id="btn-generate" disabled>✨ 生成短文</button>
       <div class="gen-status hidden" id="gen-status"></div>

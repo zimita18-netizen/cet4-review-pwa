@@ -61,12 +61,24 @@ body { padding-bottom: env(safe-area-inset-bottom); }
 .upload-text { font-size: 15px; font-weight: 600; }
 .upload-sub { font-size: 12px; color: var(--muted); }
 
-.preview { position: relative; margin-bottom: 12px; }
-.preview img { width: 100%; border-radius: 12px; display: block; }
-.btn-remove {
-  position: absolute; top: 8px; right: 8px;
+.preview { margin-bottom: 12px; }
+.preview-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
+  margin-bottom: 12px;
+}
+.thumb-wrap { position: relative; }
+.thumb { width: 100%; aspect-ratio: 3/4; object-fit: cover; border-radius: 8px; display: block; }
+.thumb-del {
+  position: absolute; top: 4px; right: 4px;
+  width: 22px; height: 22px; border-radius: 50%;
   background: rgba(0,0,0,0.55); color: #fff; border: none;
-  border-radius: 14px; padding: 5px 10px; font-size: 12px; cursor: pointer;
+  font-size: 12px; line-height: 22px; cursor: pointer; padding: 0;
+}
+.btn-remove {
+  width: 100%;
+  background: transparent; color: var(--muted);
+  border: 1px dashed var(--line); border-radius: 10px;
+  padding: 8px; font-size: 13px; cursor: pointer;
 }
 
 /* 按钮 */
