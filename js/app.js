@@ -600,12 +600,21 @@
       return;
     }
     box.innerHTML = '';
-    list.forEach((item) => {
+    list.forEach((item, index) => {
       const div = document.createElement('div');
       div.className = 'history-item';
       const d = document.createElement('div');
       d.className = 'h-date';
       d.textContent = item.date + (item.words ? ' · ' + item.words : '');
+      const del = document.createElement('button');
+      del.className = 'h-del';
+      del.textContent = '删除';
+      del.title = '删除这条';
+      del.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        deleteHistory(index);
+      });
+      d.appendChild(del);
       const e = document.createElement('div');
       e.className = 'h-excerpt';
       // 摘要：取各段英文，目标词高亮
@@ -623,6 +632,14 @@
       });
       box.appendChild(div);
     });
+  }
+
+  function deleteHistory(index) {
+    let list = [];
+    try { list = JSON.parse(localStorage.getItem(HIST_KEY) || '[]'); } catch (e) { return; }
+    list.splice(index, 1);
+    try { localStorage.setItem(HIST_KEY, JSON.stringify(list)); } catch (e) { /* ignore */ }
+    loadHistory();
   }
 
   /* ---------- 设置 ---------- */

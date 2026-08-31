@@ -13,6 +13,9 @@ icon_from_photo.py
 fetch_gojo.js
 download_gojo.js
 make_gojo_icons.py
+fetch_q.js
+download_q.js
+make_q_icons.py
 download.js
 convert.js
 gen_icon.py

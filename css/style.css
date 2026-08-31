@@ -102,7 +102,8 @@ body { padding-bottom: env(safe-area-inset-bottom); }
 /* 结果 */
 .result-card { padding: 20px; }
 .result-tools { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
-.result-title { font-size: 14px; font-weight: 700; }
+.result-title { font-size: 14px; font-weight: 700; display: flex; align-items: center; gap: 6px; }
+.result-title .result-title-icon { width: 20px; height: 20px; border-radius: 50%; object-fit: cover; display: block; }
 .essay { font-size: 16px; line-height: 2.0; color: var(--text); white-space: pre-wrap; }
 /* 可点击查词的单词 */
 .essay .e-word {
@@ -197,7 +198,12 @@ body { padding-bottom: env(safe-area-inset-bottom); }
 .history-item {
   padding: 14px; border: 1px solid var(--line); border-radius: 12px; margin-bottom: 10px;
 }
-.history-item .h-date { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+.history-item .h-date { font-size: 12px; color: var(--muted); margin-bottom: 6px; display: flex; align-items: center; justify-content: space-between; }
+.history-item .h-date .h-del {
+  background: none; border: none; color: #c0554d; font-size: 12px;
+  cursor: pointer; padding: 2px 6px; border-radius: 6px; flex-shrink: 0;
+}
+.history-item .h-date .h-del:active { background: rgba(192,85,77,0.1); }
 .history-item .h-excerpt { font-size: 14px; line-height: 1.6; color: var(--text); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .history-empty { text-align: center; color: var(--muted); font-size: 13px; padding: 30px 0; }
 
