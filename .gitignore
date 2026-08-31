@@ -10,6 +10,9 @@ diag.js
 deepseek_test.js
 e2e_test.js
 icon_from_photo.py
+fetch_gojo.js
+download_gojo.js
+make_gojo_icons.py
 download.js
 convert.js
 gen_icon.py

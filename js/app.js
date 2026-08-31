@@ -383,14 +383,21 @@
       if (seg.cn) {
         const eye = document.createElement('button');
         eye.className = 'para-eye';
-        eye.textContent = '👁 翻译';
+        const eyeImg = document.createElement('img');
+        eyeImg.className = 'eye-icon';
+        eyeImg.src = 'assets/icon-blindfold.png';
+        eyeImg.alt = '';
+        const eyeLabel = document.createElement('span');
+        eyeLabel.textContent = '翻译';
+        eye.appendChild(eyeImg);
+        eye.appendChild(eyeLabel);
         const cn = document.createElement('div');
         cn.className = 'para-cn hidden-cn';
         cn.textContent = seg.cn;
         eye.addEventListener('click', () => {
           const hidden = cn.classList.contains('hidden-cn');
           cn.classList.toggle('hidden-cn', !hidden);
-          eye.textContent = hidden ? '🙈 收起' : '👁 翻译';
+          eyeLabel.textContent = hidden ? '收起' : '翻译';
         });
         para.appendChild(eye);
         para.appendChild(cn);

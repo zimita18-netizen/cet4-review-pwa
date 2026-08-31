@@ -32,7 +32,8 @@ body { padding-bottom: env(safe-area-inset-bottom); }
   padding: calc(10px + env(safe-area-inset-top)) 18px 10px;
   display: flex; align-items: center; justify-content: space-between;
 }
-.brand { font-size: 18px; font-weight: 700; margin: 0; letter-spacing: 0.5px; }
+.brand { font-size: 18px; font-weight: 700; margin: 0; letter-spacing: 0.5px; display: flex; align-items: center; gap: 7px; }
+.brand .brand-icon { width: 24px; height: 24px; border-radius: 50%; object-fit: cover; display: block; }
 .topbar-btns { display: flex; gap: 4px; }
 .icon-btn {
   background: none; border: none; font-size: 20px; cursor: pointer;
@@ -134,12 +135,14 @@ body { padding-bottom: env(safe-area-inset-bottom); }
 .essay .para { margin-bottom: 14px; }
 .essay .para-en { font-size: 16px; line-height: 2.0; color: var(--text); white-space: pre-wrap; }
 .essay .para-eye {
-  margin-top: 5px; padding: 3px 12px;
+  margin-top: 5px; padding: 3px 12px 3px 6px;
   font-size: 12px; color: var(--primary);
   background: rgba(59,110,165,0.08);
   border: 1px solid rgba(59,110,165,0.22);
-  border-radius: 12px; cursor: pointer;
+  border-radius: 14px; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 5px;
 }
+.essay .para-eye .eye-icon { width: 18px; height: 18px; border-radius: 50%; object-fit: cover; display: block; }
 .essay .para-eye:active { background: rgba(59,110,165,0.16); }
 .essay .para-cn {
   font-size: 14px; line-height: 1.8; color: #6b7a8c;
