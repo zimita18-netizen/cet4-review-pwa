@@ -355,26 +355,29 @@
     segments.forEach((seg) => {
       const para = document.createElement('div');
       para.className = 'para';
+
       const en = document.createElement('div');
       en.className = 'para-en';
       en.appendChild(renderEssayDOM(seg.en, highlightSet));
       para.appendChild(en);
+
       if (seg.cn) {
+        const eye = document.createElement('button');
+        eye.className = 'para-eye';
+        eye.textContent = '👁 翻译';
         const cn = document.createElement('div');
-        cn.className = 'para-cn hidden-cn';   // 默认隐藏
+        cn.className = 'para-cn hidden-cn';
         cn.textContent = seg.cn;
+        eye.addEventListener('click', () => {
+          const hidden = cn.classList.contains('hidden-cn');
+          cn.classList.toggle('hidden-cn', !hidden);
+          eye.textContent = hidden ? '🙈 收起' : '👁 翻译';
+        });
+        para.appendChild(eye);
         para.appendChild(cn);
       }
       box.appendChild(para);
     });
-  }
-
-  function toggleTranslation() {
-    const cnEls = $('essay-en').querySelectorAll('.para-cn');
-    if (!cnEls.length) return;
-    const allHidden = Array.from(cnEls).every((el) => el.classList.contains('hidden-cn'));
-    cnEls.forEach((el) => el.classList.toggle('hidden-cn', !allHidden));
-    $('btn-toggle-trans').textContent = allHidden ? '🙈 隐藏翻译' : '👁 显示翻译';
   }
 
   async function renderResult(text) {
@@ -396,7 +399,6 @@
     const segments = paragraphs.map((en) => ({ en: en, cn: '' }));
     renderSegments(segments, highlightSet);
     $('words-chip').textContent = wordsLine ? '目标单词：' + wordsLine : '';
-    $('btn-toggle-trans').textContent = '👁 显示翻译';
     $('result-card').classList.remove('hidden');
     $('result-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
 
@@ -570,7 +572,6 @@
       div.addEventListener('click', () => {
         renderSegments(segs, buildHighlightSet(parseWordList(item.words)));
         $('words-chip').textContent = item.words ? '目标单词：' + item.words : '';
-        $('btn-toggle-trans').textContent = '👁 显示翻译';
         $('result-card').classList.remove('hidden');
         $('history-mask').classList.add('hidden');
         $('result-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -682,7 +683,6 @@
     });
 
     $('btn-copy').addEventListener('click', copyAll);
-    $('btn-toggle-trans').addEventListener('click', toggleTranslation);
 
     // 点击短文单词查词（事件委托）
     $('essay-en').addEventListener('click', (e) => {
