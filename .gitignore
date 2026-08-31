@@ -5,6 +5,7 @@ js/words.js
 js/config.js
 test_api.js
 multimg_test.js
+seg_test.js
 icon_from_photo.py
 download.js
 convert.js

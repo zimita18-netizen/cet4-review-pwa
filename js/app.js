@@ -179,7 +179,7 @@
   // 单词清单解析 → 用于渲染时兜底高亮
   function parseWordList(line) {
     if (!line) return [];
-    return line.split(/[,，、;；]+/).map((s) => s.trim()).filter(Boolean);
+    return line.split(/[,，、;；]+/).map((s) => s.replace(/[*\s]+/g, '').trim()).filter(Boolean);
   }
   // 生成一个单词的常见屈折形式（用于匹配短文里的变形词）
   function inflect(word) {
@@ -210,7 +210,7 @@
   function renderEssayDOM(text, highlightSet) {
     highlightSet = highlightSet || new Set();
     const frag = document.createDocumentFragment();
-    const pattern = /(\*\*[^*]+\*\*)|([A-Za-z][A-Za-z'-]*)/g;
+    const pattern = /(\*\*[^*]+\*\*|\*[^*]+\*)|([A-Za-z][A-Za-z'-]*)/g;
     let last = 0, m;
     while ((m = pattern.exec(text)) !== null) {
       if (m.index > last) {
@@ -251,18 +251,19 @@
     '你是一名经验丰富的大学英语四级教师。请完成以下任务：',
     '',
     '1. 仔细识别图片中出现的所有「正在学习的英文单词或词组」。忽略界面按钮、中文释义、菜单等非学习内容，只提取用户要背的英文单词本身，并还原原形（如 studies→study）。',
-    '2. 用上面提取到的【所有】单词（清单里的每一个都必须用到，一个都不能漏）写一篇英文短文。可以写长一点（200 词左右），宁可多写几句也要把全部单词都用上。要求：内容连贯、自然地道、适合中文大学生的四级水平；每个用到的目标单词都用 **两个星号** 加粗包起来，保持原形不要变形。',
-    '3. 在短文之后另起一行写「===翻译===」，下面输出短文的完整中文翻译。',
+    '2. 用上面提取到的【所有】单词（清单里的每一个都必须用到，一个都不能漏）写一篇英文短文，分成 3~4 个自然段，每段几句话，段与段之间用空行隔开，总词数 200 词左右。要求：内容连贯、自然地道、适合中文大学生的四级水平；每个用到的目标单词都用 **两个星号** 加粗包起来，保持原形不要变形。',
+    '3. 只输出英文短文，不要输出中文翻译（翻译由用户自己处理）。',
     '',
     '请严格按以下格式输出，不要有多余解释：',
     '',
     '单词: word1, word2, word3（务必列出图中识别到的全部单词，一个都不漏）',
     '',
     '短文:',
-    '（英文短文，目标词用 **word** 加粗）',
+    '（第一段英文，目标词用 **word** 加粗）',
     '',
-    '===翻译===',
-    '（中文翻译）'
+    '（第二段英文）',
+    '',
+    '（第三段英文）'
   ].join('\n');
 
   async function generate() {
@@ -319,44 +320,110 @@
     }
   }
 
-  function renderResult(text) {
-    // 解析：单词清单 + 短文 + 翻译
-    let wordsLine = '';
-    let essay = text;
-    let trans = '';
+  /* ---------- 分段解析：按空行切成英文段，翻译由前端逐段完成 ---------- */
+  function parseParagraphs(raw) {
+    return raw.split(/\n\s*\n/).map((b) => b.trim()).filter(Boolean);
+  }
 
+  // 用文本模型翻译一段英文
+  async function translateParagraph(en) {
+    const model = cfg.textModel || cfg.model;
+    const prompt = '把下面这段英文翻译成自然流畅的中文，只输出翻译结果，不要任何解释或原文：\n\n' + en;
+    const url = cfg.baseURL.replace(/\/+$/, '') + '/chat/completions';
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + cfg.key },
+      body: JSON.stringify({
+        model: model,
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.3,
+        max_tokens: 500
+      })
+    });
+    if (!resp.ok) {
+      const t = await resp.text();
+      throw new Error(resp.status + '：' + t.slice(0, 120));
+    }
+    const data = await resp.json();
+    return (data.choices && data.choices[0].message && data.choices[0].message.content) || '';
+  }
+
+
+  function renderSegments(segments, highlightSet) {
+    const box = $('essay-en');
+    box.innerHTML = '';
+    segments.forEach((seg) => {
+      const para = document.createElement('div');
+      para.className = 'para';
+      const en = document.createElement('div');
+      en.className = 'para-en';
+      en.appendChild(renderEssayDOM(seg.en, highlightSet));
+      para.appendChild(en);
+      if (seg.cn) {
+        const cn = document.createElement('div');
+        cn.className = 'para-cn hidden-cn';   // 默认隐藏
+        cn.textContent = seg.cn;
+        para.appendChild(cn);
+      }
+      box.appendChild(para);
+    });
+  }
+
+  function toggleTranslation() {
+    const cnEls = $('essay-en').querySelectorAll('.para-cn');
+    if (!cnEls.length) return;
+    const allHidden = Array.from(cnEls).every((el) => el.classList.contains('hidden-cn'));
+    cnEls.forEach((el) => el.classList.toggle('hidden-cn', !allHidden));
+    $('btn-toggle-trans').textContent = allHidden ? '🙈 隐藏翻译' : '👁 显示翻译';
+  }
+
+  async function renderResult(text) {
+    // 解析：单词清单 + 分段英文（翻译由前端逐段完成）
+    let wordsLine = '';
     const wordsMatch = text.match(/单词[:：]\s*([^\n]+)/);
     if (wordsMatch) wordsLine = wordsMatch[1].trim();
 
-    // 分割短文与翻译
-    let en = text;
-    let cn = '';
-    const sepIdx = text.indexOf('===翻译===');
-    if (sepIdx >= 0) {
-      en = text.slice(0, sepIdx);
-      cn = text.slice(sepIdx + '===翻译==='.length);
-    }
-    // 去掉 "短文:" 标签
-    en = en.replace(/^[\s\S]*?短文[:：]\s*/, '').trim();
-    cn = cn.trim();
+    let body = text;
+    const bodyMatch = text.match(/短文[:：]\s*([\s\S]*)$/);
+    if (bodyMatch) body = bodyMatch[1];
+    body = body.trim();
 
+    const paragraphs = parseParagraphs(body);
     const targetWords = parseWordList(wordsLine);
-    $('essay-en').innerHTML = '';
-    $('essay-en').appendChild(renderEssayDOM(en, buildHighlightSet(targetWords)));
-    $('essay-cn').textContent = cn;
-    $('words-chip').textContent = wordsLine ? '目标单词：' + wordsLine : '';
+    const highlightSet = buildHighlightSet(targetWords);
 
+    // 先渲染英文（中文默认隐藏、为空）
+    const segments = paragraphs.map((en) => ({ en: en, cn: '' }));
+    renderSegments(segments, highlightSet);
+    $('words-chip').textContent = wordsLine ? '目标单词：' + wordsLine : '';
+    $('btn-toggle-trans').textContent = '👁 显示翻译';
     $('result-card').classList.remove('hidden');
-    saveHistory(wordsLine, en, cn);
     $('result-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    // 并行翻译各段，完成后填入并保存
+    try {
+      const cns = await Promise.all(paragraphs.map((en) => translateParagraph(en)));
+      segments.forEach((s, i) => { s.cn = (cns[i] || '').trim(); });
+      renderSegments(segments, highlightSet);
+      saveHistory(wordsLine, segments);
+    } catch (e) {
+      saveHistory(wordsLine, segments);
+    }
   }
 
   /* ---------- 复制 ---------- */
   function copyAll() {
-    const en = $('essay-en').innerText;
-    const cn = $('essay-cn').textContent;
+    const lines = [];
     const words = $('words-chip').textContent;
-    const full = [words, '', en, '', '===翻译===', cn].filter(Boolean).join('\n');
+    if (words) { lines.push(words, ''); }
+    document.querySelectorAll('#essay-en .para').forEach((para) => {
+      const en = para.querySelector('.para-en') ? para.querySelector('.para-en').innerText : '';
+      const cn = para.querySelector('.para-cn') ? para.querySelector('.para-cn').textContent : '';
+      if (en) lines.push(en);
+      if (cn) lines.push('【译】' + cn);
+      lines.push('');
+    });
+    const full = lines.join('\n').trim();
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(full).then(() => toast('已复制全文 ✓'));
     } else {
@@ -465,14 +532,13 @@
   }
 
   /* ---------- 历史记录 ---------- */
-  function saveHistory(words, en, cn) {
+  function saveHistory(words, segments) {
     let list = [];
     try { list = JSON.parse(localStorage.getItem(HIST_KEY) || '[]'); } catch (e) { /* ignore */ }
     list.unshift({
       date: new Date().toLocaleString('zh-CN'),
       words: words,
-      en: en,
-      cn: cn
+      segments: segments
     });
     list = list.slice(0, 30);
     try { localStorage.setItem(HIST_KEY, JSON.stringify(list)); } catch (e) { /* ignore */ }
@@ -495,14 +561,16 @@
       d.textContent = item.date + (item.words ? ' · ' + item.words : '');
       const e = document.createElement('div');
       e.className = 'h-excerpt';
-      e.innerHTML = renderHighlightHtml(item.en);
+      // 摘要：取各段英文，目标词高亮
+      const segs = item.segments || [];
+      const preview = segs.map((s) => s.en).join(' ');
+      e.innerHTML = renderHighlightHtml(preview);
       div.appendChild(d);
       div.appendChild(e);
       div.addEventListener('click', () => {
-        $('essay-en').innerHTML = '';
-        $('essay-en').appendChild(renderEssayDOM(item.en, buildHighlightSet(parseWordList(item.words))));
-        $('essay-cn').textContent = item.cn;
+        renderSegments(segs, buildHighlightSet(parseWordList(item.words)));
         $('words-chip').textContent = item.words ? '目标单词：' + item.words : '';
+        $('btn-toggle-trans').textContent = '👁 显示翻译';
         $('result-card').classList.remove('hidden');
         $('history-mask').classList.add('hidden');
         $('result-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -614,6 +682,7 @@
     });
 
     $('btn-copy').addEventListener('click', copyAll);
+    $('btn-toggle-trans').addEventListener('click', toggleTranslation);
 
     // 点击短文单词查词（事件委托）
     $('essay-en').addEventListener('click', (e) => {
