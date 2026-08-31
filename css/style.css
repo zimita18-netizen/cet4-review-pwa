@@ -120,6 +120,16 @@ body { padding-bottom: env(safe-area-inset-bottom); }
   border-bottom: none;
 }
 .essay .e-word.target:hover, .essay .e-word.target:active { background: #ffe21f; }
+/* 手动标记的生词：荧光红（优先于黄色） */
+.essay .e-word.marked {
+  background: #ffb3b3;
+  color: #8c1d1d;
+  font-weight: 800;
+  padding: 1px 4px;
+  border-radius: 4px;
+  border-bottom: none;
+}
+.essay .e-word.marked:hover, .essay .e-word.marked:active { background: #ff8f8f; }
 .essay-divider { text-align: center; color: var(--muted); font-size: 12px; margin: 18px 0 12px; }
 .essay-cn { font-size: 15px; line-height: 1.8; color: #4a5668; white-space: pre-wrap; }
 .words-chip { margin-top: 14px; font-size: 12px; color: var(--muted); line-height: 1.6; word-break: break-all; }
@@ -188,3 +198,12 @@ body { padding-bottom: env(safe-area-inset-bottom); }
 .lookup-body { font-size: 15px; line-height: 1.8; white-space: pre-wrap; color: var(--text); }
 .lookup-body .lk-ph { color: var(--muted); }
 .lookup-body .lk-pos { color: var(--primary); font-weight: 600; }
+.btn-mark {
+  margin-top: 14px; width: 100%;
+  background: rgba(214,106,106,0.1); color: #c04a4a;
+  border: 1.5px solid #eec9c9; border-radius: 12px;
+  padding: 12px; font-size: 15px; font-weight: 600; cursor: pointer;
+}
+.btn-mark.marked {
+  background: #d66a6a; color: #fff; border-color: #d66a6a;
+}

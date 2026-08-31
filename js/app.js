@@ -7,6 +7,20 @@
 
   const STORE_KEY = 'cet4essay_cfg_v1';
   const HIST_KEY = 'cet4essay_hist_v1';
+  const MARK_KEY = 'cet4essay_mark_v1';
+
+  /* ---------- 手动标红的生词集合（持久化） ---------- */
+  let markedWords = loadMarked();
+  function loadMarked() {
+    try {
+      const raw = localStorage.getItem(MARK_KEY);
+      if (raw) return new Set(JSON.parse(raw));
+    } catch (e) { /* ignore */ }
+    return new Set();
+  }
+  function saveMarked() {
+    try { localStorage.setItem(MARK_KEY, JSON.stringify(Array.from(markedWords))); } catch (e) { /* ignore */ }
+  }
 
   /* ---------- 预设模型模板 ---------- */
   const PRESETS = {
@@ -203,19 +217,20 @@
         frag.appendChild(document.createTextNode(text.slice(last, m.index)));
       }
       if (m[1]) {
-        // 目标词 → 高亮加粗
+        // 目标词 → 高亮加粗（若已被手动标红则红色优先）
         const word = m[1].replace(/\*/g, '');
         const b = document.createElement('b');
-        b.className = 'e-word target';
+        b.className = 'e-word ' + (markedWords.has(word.toLowerCase()) ? 'marked' : 'target');
         b.dataset.word = word;
         b.textContent = word;
         frag.appendChild(b);
       } else if (m[2]) {
-        // 普通英文单词 → 可点击查词；若命中了目标词集合则也高亮
+        // 普通英文单词 → 可点击查词；命中目标词集合则高亮；已标红则红色优先
         const word = m[2];
+        const marked = markedWords.has(word.toLowerCase());
         const isTarget = highlightSet.has(word.toLowerCase());
         const span = document.createElement('span');
-        span.className = 'e-word' + (isTarget ? ' target' : '');
+        span.className = 'e-word' + (marked ? ' marked' : (isTarget ? ' target' : ''));
         span.dataset.word = word;
         span.textContent = word;
         frag.appendChild(span);
@@ -236,12 +251,12 @@
     '你是一名经验丰富的大学英语四级教师。请完成以下任务：',
     '',
     '1. 仔细识别图片中出现的所有「正在学习的英文单词或词组」。忽略界面按钮、中文释义、菜单等非学习内容，只提取用户要背的英文单词本身，并还原原形（如 studies→study）。',
-    '2. 用提取到的这些单词，写一篇 130~180 词的英文短文。要求：内容连贯、自然地道、适合中文大学生的四级阅读水平；文中出现的每个目标单词（保持原形，不要变形成过去式/复数等）都必须用 **两个星号** 加粗包起来，一个都不能漏。',
+    '2. 用上面提取到的【所有】单词（清单里的每一个都必须用到，一个都不能漏）写一篇英文短文。可以写长一点（200 词左右），宁可多写几句也要把全部单词都用上。要求：内容连贯、自然地道、适合中文大学生的四级水平；每个用到的目标单词都用 **两个星号** 加粗包起来，保持原形不要变形。',
     '3. 在短文之后另起一行写「===翻译===」，下面输出短文的完整中文翻译。',
     '',
     '请严格按以下格式输出，不要有多余解释：',
     '',
-    '单词: word1, word2, word3',
+    '单词: word1, word2, word3（务必列出图中识别到的全部单词，一个都不漏）',
     '',
     '短文:',
     '（英文短文，目标词用 **word** 加粗）',
@@ -364,13 +379,44 @@
   }
 
   /* ---------- 点击查词 ---------- */
+  let currentLookupWord = '';
+  function updateMarkBtn() {
+    const btn = $('btn-lookup-mark');
+    if (!btn) return;
+    const marked = currentLookupWord && markedWords.has(currentLookupWord.toLowerCase());
+    btn.textContent = marked ? '★ 已标记（点击取消）' : '☆ 标记为生词';
+    btn.classList.toggle('marked', !!marked);
+    btn.dataset.word = currentLookupWord;
+  }
   function showLookup(word, content) {
+    currentLookupWord = word;
     $('lookup-word').textContent = word;
     $('lookup-body').textContent = content;
     $('lookup-mask').classList.remove('hidden');
+    updateMarkBtn();
   }
   function closeLookup() {
     $('lookup-mask').classList.add('hidden');
+  }
+  // 标记/取消标记为生词，并把当前短文里该词染红/恢复
+  function toggleMark() {
+    const word = currentLookupWord;
+    if (!word) return;
+    const key = word.toLowerCase();
+    if (markedWords.has(key)) {
+      markedWords.delete(key);
+    } else {
+      markedWords.add(key);
+    }
+    saveMarked();
+    updateMarkBtn();
+    // 直接改当前短文 DOM 里所有匹配该词的单词
+    document.querySelectorAll('#essay-en .e-word').forEach((el) => {
+      if (el.dataset.word && el.dataset.word.toLowerCase() === key) {
+        el.classList.toggle('marked', markedWords.has(key));
+        if (markedWords.has(key)) el.classList.remove('target');
+      }
+    });
   }
   let lookupSeq = 0;
   async function lookupWord(word) {
@@ -575,6 +621,7 @@
       if (el && el.dataset.word) lookupWord(el.dataset.word);
     });
     $('btn-lookup-close').addEventListener('click', closeLookup);
+    $('btn-lookup-mark').addEventListener('click', toggleMark);
     $('lookup-mask').addEventListener('click', (e) => {
       if (e.target === $('lookup-mask')) closeLookup();
     });
