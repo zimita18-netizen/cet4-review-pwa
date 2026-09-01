@@ -10,9 +10,10 @@ const ASSETS = [
   './icons/icon-192.png',
   './icons/icon-512.png',
   './assets/icon-blindfold.png',
-  './assets/icon-q-smile.png',
   './assets/icon-q-wink.png',
-  './assets/icon-q-thumbs.png'
+  './assets/icon-q-thumbs.png',
+  './assets/icon-muryo.png',
+  './assets/icon-word.png'
 ];
 
 self.addEventListener('install', (e) => {

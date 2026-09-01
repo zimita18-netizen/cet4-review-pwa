@@ -8,6 +8,17 @@
   const STORE_KEY = 'cet4essay_cfg_v1';
   const HIST_KEY = 'cet4essay_hist_v1';
   const MARK_KEY = 'cet4essay_mark_v1';
+  const WORDS_KEY = 'cet4essay_words_v1';
+
+  /* ---------- 词库：最近录入的单词（供短文/游戏/复习共用） ---------- */
+  let todayWords = loadWords();
+  function loadWords() {
+    try { return JSON.parse(localStorage.getItem(WORDS_KEY) || '[]'); } catch (e) { /* ignore */ }
+    return [];
+  }
+  function saveWords(w) {
+    try { localStorage.setItem(WORDS_KEY, JSON.stringify(w)); } catch (e) { /* ignore */ }
+  }
 
   /* ---------- 手动标红的生词集合（持久化） ---------- */
   let markedWords = loadMarked();
@@ -85,14 +96,14 @@
   /* ---------- 视图 ---------- */
   let currentImages = [];   // dataURI 数组（支持多张截图）
 
-  const VIEWS = ['view-workbench', 'view-essay', 'view-game', 'view-words'];
+  const VIEWS = ['view-workbench', 'view-identify', 'view-essay', 'view-game', 'view-words'];
   function showView(name) {
     VIEWS.forEach((v) => $(v).classList.toggle('hidden', v !== name));
     $('btn-back').classList.toggle('hidden', name === 'view-workbench');
     window.scrollTo(0, 0);
   }
   function gotoCard(name) {
-    if (name === 'essay' || name === 'game' || name === 'words') {
+    if (name === 'identify' || name === 'essay' || name === 'game' || name === 'words') {
       showView('view-' + name);
     } else if (name === 'history') {
       openHistory();
@@ -127,7 +138,9 @@
     bind();
     loadHistory();
     syncCfgToUI();
-    refreshGenerateBtn();
+    renderWordPool();
+    updateEssayInput();
+    refreshIdentifyBtn();
     showView('view-workbench');
   }
 
@@ -182,7 +195,7 @@
     if (!currentImages.length) {
       $('preview-box').classList.add('hidden');
       $('upload-zone').classList.remove('hidden');
-      refreshGenerateBtn();
+      refreshIdentifyBtn();
       return;
     }
     $('preview-box').classList.remove('hidden');
@@ -207,11 +220,16 @@
       grid.appendChild(wrap);
     });
     $('upload-text').textContent = '已选 ' + currentImages.length + ' 张，可继续添加或点「清空重选」';
-    refreshGenerateBtn();
+    refreshIdentifyBtn();
   }
 
   function refreshGenerateBtn() {
-    $('btn-generate').disabled = !(currentImages.length && cfg.vision.key && cfg.write.key);
+    // 生成短文按钮：有词库 + 写文模型即可
+    $('btn-generate').disabled = !(todayWords.length && cfg.write.key);
+  }
+  function refreshIdentifyBtn() {
+    // 识词按钮：有截图 + 识图模型即可
+    $('btn-identify').disabled = !(currentImages.length && cfg.vision.key);
   }
 
   /* ---------- 生成短文 ---------- */
@@ -346,9 +364,8 @@
   }
 
   async function generate() {
-    if (!currentImages.length) return;
-    if (!cfg.vision.key || !cfg.write.key) { openSettings(); alert('请先在设置里填好「识图模型」和「写文模型」的 key'); return; }
-    if (!cfg.vision.baseURL || !cfg.vision.model || !cfg.write.baseURL || !cfg.write.model) { openSettings(); alert('请先填全识别/写文模型的地址和模型名'); return; }
+    if (!todayWords.length) { alert('词库还是空的，先去「六眼 · 识词」上传截图录入单词'); return; }
+    if (!cfg.write.key || !cfg.write.baseURL || !cfg.write.model) { openSettings(); alert('请先在设置里填好「写文模型」的 key'); return; }
 
     const status = $('gen-status');
     status.classList.remove('hidden');
@@ -356,12 +373,8 @@
     $('btn-generate').disabled = true;
 
     try {
-      // 第一步：识图拿单词清单
-      status.textContent = '① 正在识别截图中的单词…';
-      const wordsLine = await callVision();
-
-      // 第二步：写短文
-      status.textContent = '② 正在根据单词生成短文…';
+      status.textContent = '正在根据词库生成短文…';
+      const wordsLine = todayWords.join(', ');
       const essay = await callWrite(writeEssayPrompt(wordsLine));
       if (!essay.trim()) throw new Error('写文模型没返回短文');
 
@@ -373,6 +386,61 @@
     } finally {
       refreshGenerateBtn();
     }
+  }
+
+  // 识词：截图 → 识图 → 存词库
+  async function identifyWords() {
+    if (!currentImages.length) return;
+    if (!cfg.vision.key || !cfg.vision.baseURL || !cfg.vision.model) { openSettings(); alert('请先在设置里填好「识图模型」的 key'); return; }
+
+    const status = $('identify-status');
+    status.classList.remove('hidden');
+    status.classList.remove('error');
+    status.textContent = '六眼正在扫描截图中的单词…';
+    $('btn-identify').disabled = true;
+
+    try {
+      const wordsLine = await callVision();
+      const words = parseWordList(wordsLine);
+      // 去重（保留顺序）
+      todayWords = Array.from(new Set(words));
+      saveWords(todayWords);
+      renderWordPool();
+      updateEssayInput();
+      status.classList.remove('error');
+      status.textContent = '已录入 ' + todayWords.length + ' 个词，可去生成短文或玩游戏了 ✓';
+    } catch (e) {
+      status.classList.add('error');
+      status.textContent = '识别失败：' + e.message;
+    } finally {
+      refreshIdentifyBtn();
+    }
+  }
+
+  // 渲染词库列表
+  function renderWordPool() {
+    const card = $('word-pool-card');
+    const box = $('word-pool');
+    $('word-pool-count').textContent = todayWords.length;
+    if (!todayWords.length) {
+      card.classList.add('hidden');
+      return;
+    }
+    card.classList.remove('hidden');
+    box.innerHTML = '';
+    todayWords.forEach((w) => {
+      const chip = document.createElement('span');
+      chip.className = 'pool-chip';
+      chip.textContent = w;
+      box.appendChild(chip);
+    });
+  }
+
+  // 更新短文入口的状态（词库字数）
+  function updateEssayInput() {
+    $('essay-word-count').textContent = todayWords.length;
+    $('essay-empty-tip').style.display = todayWords.length ? 'none' : '';
+    refreshGenerateBtn();
   }
 
   /* ---------- 分段解析：按空行切成英文段，翻译由前端逐段完成 ---------- */
@@ -757,6 +825,10 @@
     });
 
     $('btn-generate').addEventListener('click', generate);
+    $('btn-identify').addEventListener('click', identifyWords);
+    // 短文页里的「去识词」按钮（不在工作台卡片里，需单独绑定）
+    const gotoIdentify = $('btn-goto-identify');
+    if (gotoIdentify) gotoIdentify.addEventListener('click', () => gotoCard('identify'));
 
     $('btn-settings').addEventListener('click', openSettings);
     $('btn-settings-close').addEventListener('click', closeSettings);

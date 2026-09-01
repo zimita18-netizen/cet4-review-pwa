@@ -17,7 +17,7 @@
     <div class="topbar-inner">
       <div class="topbar-left">
         <button class="back-btn hidden" id="btn-back">‹ 返回</button>
-        <h1 class="brand" id="title-bar"><img class="brand-icon" src="assets/icon-q-smile.png" alt="">无量空处</h1>
+        <h1 class="brand" id="title-bar"><img class="brand-icon" src="assets/icon-muryo.png" alt="">无量空处</h1>
       </div>
       <div class="topbar-btns">
         <button class="theme-btn" id="btn-theme" title="切换主题">🌙</button>
@@ -31,15 +31,20 @@
     <!-- ===== 工作台首页 ===== -->
     <section class="view" id="view-workbench">
       <div class="wb-hero">
-        <img class="wb-avatar" src="assets/icon-q-smile.png" alt="五条悟">
+        <img class="wb-avatar" src="assets/icon-muryo.png" alt="无量空处">
         <h2>无量空处</h2>
         <p class="wb-sub" id="wb-tip">「最强的咒术师，也要背单词。」</p>
       </div>
       <div class="wb-grid">
-        <div class="wb-card wb-full" data-goto="essay">
+        <div class="wb-card" data-goto="identify">
+          <img class="wb-icon" src="assets/icon-word.png" alt="">
+          <div class="wb-name">六眼 · 识词</div>
+          <div class="wb-desc">截图识词 → 进词库</div>
+        </div>
+        <div class="wb-card" data-goto="essay">
           <img class="wb-icon" src="assets/icon-q-wink.png" alt="">
           <div class="wb-name">施术 · 生成短文</div>
-          <div class="wb-desc">截图识词 → 一篇短文</div>
+          <div class="wb-desc">用词库的词写短文</div>
         </div>
         <div class="wb-card" data-goto="game">
           <img class="wb-icon" src="assets/icon-blindfold.png" alt="">
@@ -54,9 +59,8 @@
       </div>
     </section>
 
-    <!-- ===== 短文功能页 ===== -->
-    <section class="view hidden" id="view-essay">
-      <!-- 上传区 -->
+    <!-- ===== 识词板块 ===== -->
+    <section class="view hidden" id="view-identify">
       <section class="card">
         <label class="upload-zone" id="upload-zone" for="file-input">
           <input type="file" id="file-input" accept="image/*" multiple style="display:none">
@@ -68,6 +72,26 @@
           <div class="preview-grid" id="preview-grid"></div>
           <button class="btn-remove" id="btn-remove">✕ 清空重选</button>
         </div>
+        <button class="btn btn-primary btn-wide" id="btn-identify" disabled>🔍 识词</button>
+        <div class="gen-status hidden" id="identify-status"></div>
+      </section>
+
+      <section class="card hidden" id="word-pool-card">
+        <div class="result-tools">
+          <span class="result-title">已录入词库（<span id="word-pool-count">0</span> 个）</span>
+        </div>
+        <div class="word-pool" id="word-pool"></div>
+      </section>
+    </section>
+
+    <!-- ===== 短文功能页 ===== -->
+    <section class="view hidden" id="view-essay">
+      <section class="card">
+        <div class="result-tools">
+          <span class="result-title">词库当前 <b id="essay-word-count">0</b> 个词</span>
+          <button class="btn-link" data-goto="identify" id="btn-goto-identify">去识词</button>
+        </div>
+        <p class="sub" id="essay-empty-tip">还没有词，先去「识词 · 录入」上传截图。</p>
         <button class="btn btn-primary btn-wide" id="btn-generate" disabled>✨ 生成短文</button>
         <div class="gen-status hidden" id="gen-status"></div>
       </section>

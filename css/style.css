@@ -271,7 +271,7 @@ body { padding-bottom: env(safe-area-inset-bottom); }
 
 /* ===== 工作台 ===== */
 .wb-hero { text-align: center; padding: 10px 0 4px; }
-.wb-hero .wb-avatar { width: 72px; height: 72px; border-radius: 50%; object-fit: cover; border: 3px solid var(--primary); box-shadow: 0 0 18px var(--primary-soft); }
+.wb-hero .wb-avatar { width: 100px; height: 100px; border-radius: 50%; object-fit: cover; border: 3px solid var(--primary); box-shadow: 0 0 18px var(--primary-soft); }
 .wb-hero h2 { font-size: 20px; margin: 10px 0 4px; }
 .wb-hero .wb-sub { font-size: 13px; color: var(--muted); margin: 0; }
 
@@ -283,12 +283,21 @@ body { padding-bottom: env(safe-area-inset-bottom); }
   transition: transform .12s, box-shadow .12s; user-select: none;
 }
 .wb-card:active { transform: scale(0.97); box-shadow: 0 0 18px var(--primary-soft); }
-.wb-card .wb-icon { width: 52px; height: 52px; border-radius: 50%; object-fit: cover; margin: 0 auto 10px; display: block; }
+.wb-card .wb-icon { width: 72px; height: 72px; border-radius: 50%; object-fit: cover; margin: 0 auto 10px; display: block; }
 .wb-card .wb-emoji { font-size: 42px; display: block; margin-bottom: 8px; }
 .wb-card.wb-full { grid-column: 1 / -1; }
 .wb-card .wb-name { font-size: 15px; font-weight: 700; }
 .wb-card .wb-desc { font-size: 12px; color: var(--muted); margin-top: 4px; }
 .wb-card.disabled { opacity: 0.55; }
+
+/* 词库 chips */
+.word-pool { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.pool-chip {
+  font-size: 14px; padding: 6px 12px; border-radius: 16px;
+  background: var(--primary-soft); color: var(--primary);
+  font-weight: 600; border: 1px solid var(--primary-soft);
+}
+.pool-chip:empty { display: none; }
 
 .wb-grid.wb-grid-1 { grid-template-columns: 1fr; }
 
