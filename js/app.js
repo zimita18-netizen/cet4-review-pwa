@@ -564,88 +564,7 @@
     });
   }
 
-  /* 复习：四选一 */
-  let reviewQueue = [];
-  let reviewPos = 0;
-  let reviewRight = 0;
-
-  function startReview() {
-    reviewQueue = dueWords(20);
-    if (!reviewQueue.length) {
-      alert('没有需要复习的词（先识词录入，或所有词都在间隔期内）');
-      return;
-    }
-    reviewPos = 0;
-    reviewRight = 0;
-    $('review-card').classList.remove('hidden');
-    $('btn-review-done').classList.add('hidden');
-    $('review-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
-    nextReviewQuestion();
-  }
-
-  function nextReviewQuestion() {
-    if (reviewPos >= reviewQueue.length) {
-      finishReview();
-      return;
-    }
-    $('review-progress').textContent = (reviewPos + 1) + ' / ' + reviewQueue.length;
-    const target = reviewQueue[reviewPos];
-    $('review-word').textContent = target.word;
-    $('review-feedback').classList.add('hidden');
-    $('btn-review-next').classList.add('hidden');
-    buildReviewOptions(target);
-  }
-
-  function buildReviewOptions(target) {
-    const box = $('review-options');
-    box.innerHTML = '';
-    const correct = target.meaning || '（无释义）';
-    const opts = [correct];
-    // 从词库里随机找 3 个干扰释义
-    let guard = 0;
-    while (opts.length < 4 && guard < 300) {
-      guard++;
-      const r = wordBank[Math.floor(Math.random() * wordBank.length)];
-      if (!r || r.meaning === correct || opts.indexOf(r.meaning) >= 0 || !r.meaning) continue;
-      opts.push(r.meaning);
-    }
-    while (opts.length < 4) opts.push('（无此义项）');
-    shuffle(opts);
-    opts.forEach((o) => {
-      const btn = document.createElement('button');
-      btn.className = 'opt';
-      btn.textContent = o;
-      btn.addEventListener('click', () => answerReview(btn, o, correct, target));
-      box.appendChild(btn);
-    });
-  }
-
-  function answerReview(btn, chosen, correct, target) {
-    const opts = document.querySelectorAll('#review-options .opt');
-    opts.forEach((o) => o.classList.add('disabled'));
-    const isRight = chosen === correct;
-    if (isRight) {
-      btn.classList.add('right');
-      reviewRight++;
-    } else {
-      btn.classList.add('wrong');
-      opts.forEach((o) => { if (o.textContent === correct) o.classList.add('right'); });
-    }
-    scheduleReview(target, isRight);
-    saveWordBank();
-    $('review-feedback').classList.remove('hidden');
-    $('review-feedback').textContent = isRight ? '✅ 答对了！' : '❌ 正确答案：' + correct;
-    $('btn-review-next').classList.remove('hidden');
-  }
-
-  function finishReview() {
-    $('review-progress').textContent = '完成！';
-    $('review-word').textContent = '一共 ' + reviewQueue.length + ' 题，答对 ' + reviewRight + ' 题';
-    $('review-options').innerHTML = '';
-    $('review-feedback').classList.add('hidden');
-    $('btn-review-next').classList.add('hidden');
-    $('btn-review-done').classList.remove('hidden');
-  }
+  /* 复习：四选一（已移除，复习交给游戏） */
 
   /* ---------- 分段解析：按空行切成英文段，翻译由前端逐段完成 ---------- */
   function parseParagraphs(raw) {
@@ -1030,10 +949,6 @@
 
     $('btn-generate').addEventListener('click', generate);
     $('btn-identify').addEventListener('click', identifyWords);
-    // 词库复习
-    $('btn-review').addEventListener('click', startReview);
-    $('btn-review-next').addEventListener('click', nextReviewQuestion);
-    $('btn-review-done').addEventListener('click', () => { $('review-card').classList.add('hidden'); renderBank(); });
     // 短文页里的「去识词」按钮（不在工作台卡片里，需单独绑定）
     const gotoIdentify = $('btn-goto-identify');
     if (gotoIdentify) gotoIdentify.addEventListener('click', () => gotoCard('identify'));

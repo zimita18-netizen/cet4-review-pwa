@@ -118,7 +118,7 @@
       </section>
     </section>
 
-    <!-- ===== 词库复习 ===== -->
+    <!-- ===== 词库（记录） ===== -->
     <section class="view hidden" id="view-words">
       <section class="card">
         <div class="result-title" style="margin-bottom:10px">♾️ 咒力池</div>
@@ -127,23 +127,12 @@
           <div class="stat"><div class="num" id="bank-due">0</div><div class="lab">今天该复习</div></div>
           <div class="stat"><div class="num" id="bank-mastered">0</div><div class="lab">已掌握</div></div>
         </div>
-        <button class="btn btn-primary btn-wide" id="btn-review">开始复习（四选一）</button>
       </section>
 
       <!-- 词库列表 -->
       <section class="card">
         <div class="result-title" style="margin-bottom:8px">词库（<span id="bank-list-count">0</span>）</div>
         <div class="bank-list" id="bank-list"></div>
-      </section>
-
-      <!-- 复习区 -->
-      <section class="card hidden" id="review-card">
-        <div class="progress" id="review-progress">1 / 10</div>
-        <div class="choice-word" id="review-word">word</div>
-        <div class="choice-options" id="review-options"></div>
-        <div class="choice-feedback hidden" id="review-feedback"></div>
-        <button class="btn btn-primary btn-wide hidden" id="btn-review-next">下一题</button>
-        <button class="btn btn-ghost btn-wide hidden" id="btn-review-done">完成复习</button>
       </section>
     </section>
   </main>
