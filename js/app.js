@@ -627,12 +627,22 @@
       renderBank();
       status.classList.remove('error');
       status.textContent = '已录入 ' + todayWords.length + ' 个词，可去生成短文或复习了 ✓';
+      clearImages();
     } catch (e) {
       status.classList.add('error');
       status.textContent = '识别失败：' + e.message;
     } finally {
       refreshIdentifyBtn();
     }
+  }
+
+  // 清空截图和预览
+  function clearImages() {
+    currentImages = [];
+    $('file-input').value = '';
+    $('preview-grid').innerHTML = '';
+    $('upload-text').textContent = '点这里，上传今天背单词的截图';
+    renderPreview();
   }
 
   // 渲染词库列表
