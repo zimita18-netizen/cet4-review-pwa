@@ -1,7 +1,7 @@
 {
-  "name": "五条悟单词工作台",
-  "short_name": "五条悟单词",
-  "description": "五条悟主题的单词学习工作台：截图生成短文 + 游戏化复习",
+  "name": "无量空处",
+  "short_name": "无量空处",
+  "description": "五条悟主题的单词学习：截图生成短文 + 游戏化复习",
   "lang": "zh-CN",
   "start_url": "./",
   "scope": "./",

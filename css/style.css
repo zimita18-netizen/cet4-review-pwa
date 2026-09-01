@@ -285,6 +285,7 @@ body { padding-bottom: env(safe-area-inset-bottom); }
 .wb-card:active { transform: scale(0.97); box-shadow: 0 0 18px var(--primary-soft); }
 .wb-card .wb-icon { width: 52px; height: 52px; border-radius: 50%; object-fit: cover; margin: 0 auto 10px; display: block; }
 .wb-card .wb-emoji { font-size: 42px; display: block; margin-bottom: 8px; }
+.wb-card.wb-full { grid-column: 1 / -1; }
 .wb-card .wb-name { font-size: 15px; font-weight: 700; }
 .wb-card .wb-desc { font-size: 12px; color: var(--muted); margin-top: 4px; }
 .wb-card.disabled { opacity: 0.55; }
