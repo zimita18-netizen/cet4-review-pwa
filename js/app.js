@@ -133,6 +133,7 @@
     if (name === 'view-words') renderBank();
     if (name === 'view-essay') updateEssayInput();
     if (name === 'view-identify') { renderWordPool(); refreshIdentifyBtn(); }
+    if (name === 'view-game') resetBattle();
     window.scrollTo(0, 0);
   }
   function gotoCard(name) {
@@ -566,6 +567,219 @@
     s.due = Date.now() + s.ivl * 86400000;
     w.state = s;
     return w;
+  }
+
+  /* ============ 音效（Web Audio 合成） ============ */
+  let audioCtx = null;
+  let soundEnabled = true;
+  function ensureAudio() {
+    if (!audioCtx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (AC) audioCtx = new AC();
+    }
+    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+  }
+  function beep(freq, dur, type, gain, when) {
+    if (!soundEnabled || !audioCtx) return;
+    const t = when || audioCtx.currentTime;
+    const osc = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    osc.type = type || 'sine';
+    osc.frequency.value = freq;
+    g.gain.setValueAtTime(gain || 0.2, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    osc.connect(g);
+    g.connect(audioCtx.destination);
+    osc.start(t);
+    osc.stop(t + dur);
+  }
+  function sfxHit() {         // 命中
+    beep(880, 0.08, 'square', 0.25); beep(1320, 0.12, 'square', 0.2, audioCtx.currentTime + 0.03);
+  }
+  function sfxMiss() {        // 答错
+    beep(200, 0.25, 'sawtooth', 0.22); beep(140, 0.3, 'sawtooth', 0.2, audioCtx.currentTime + 0.05);
+  }
+  function sfxCast() {        // 蓄力
+    beep(300, 0.2, 'sawtooth', 0.15); beep(500, 0.25, 'sawtooth', 0.15, audioCtx.currentTime + 0.1);
+  }
+  function sfxUpgrade() {     // 术式升级
+    beep(660, 0.1, 'square', 0.22); beep(880, 0.1, 'square', 0.22, audioCtx.currentTime + 0.07); beep(1100, 0.14, 'square', 0.24, audioCtx.currentTime + 0.14);
+  }
+  function sfxVoid() {        // 无量空处
+    beep(520, 0.6, 'sine', 0.25); beep(780, 0.6, 'sine', 0.2, audioCtx.currentTime + 0.1); beep(1040, 0.6, 'sine', 0.18, audioCtx.currentTime + 0.2);
+  }
+  function sfxWin() {         // 胜利
+    [523, 659, 784, 1047].forEach((f, i) => beep(f, 0.16, 'square', 0.24, audioCtx.currentTime + i * 0.12));
+  }
+  function sfxLose() {        // 失败
+    [392, 330, 262, 196].forEach((f, i) => beep(f, 0.22, 'sawtooth', 0.2, audioCtx.currentTime + i * 0.15));
+  }
+
+  /* ============ 新宿决战 游戏 ============ */
+  const TECHNIQUES = [
+    { name: '苍', combo: 0, damage: 15 },
+    { name: '赫', combo: 3, damage: 25 },
+    { name: '茈', combo: 6, damage: 40 },
+    { name: '无量空处', combo: 10, damage: 100 }
+  ];
+  const DIALOGUES = {
+    cast: ['五条悟：术式顺转「苍」！', '五条悟：术式反转「赫」！', '五条悟：虚式「茈」！', '五条悟：领域展开——无量空处！'],
+    hit: ['五条悟：就这？', '五条悟：还不够啊。', '五条悟：再让我刷会帅。', '宿傩：有意思…'],
+    miss: ['宿傩：太慢了。', '宿傩：就这点本事？', '五条悟：啧，分心了。'],
+    win: ['五条悟：你已经成长到这种地步了，老师为你骄傲。', '五条悟：赢了，就这水平？'],
+    lose: ['宿傩：就你这点咒力，也敢挑战我？', '宿傩：太弱了。']
+  };
+  const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+
+  let battle = { playerHp: 100, enemyHp: 100, combo: 0, techIdx: 0, ended: false };
+
+  function currentTech() {
+    let idx = 0;
+    for (let i = 0; i < TECHNIQUES.length; i++) {
+      if (battle.combo >= TECHNIQUES[i].combo) idx = i;
+    }
+    return TECHNIQUES[idx];
+  }
+
+  function resetBattle() {
+    battle = { playerHp: 100, enemyHp: 100, combo: 0, techIdx: 0, ended: false };
+    renderBattle();
+    $('battle-result').classList.add('hidden');
+    $('battle-quiz').classList.add('hidden');
+    $('btn-attack').classList.remove('hidden');
+    setDialogue('五条悟：我的学生都在看着呢，可别丢人啊。');
+  }
+
+  function renderBattle() {
+    $('hp-player').style.width = battle.playerHp + '%';
+    $('hp-player-num').textContent = battle.playerHp;
+    $('hp-enemy').style.width = battle.enemyHp + '%';
+    $('hp-enemy-num').textContent = battle.enemyHp;
+    $('combo-count').textContent = battle.combo;
+    $('technique-label').textContent = '术式：' + currentTech().name;
+  }
+
+  function setDialogue(text) {
+    $('battle-dialogue').textContent = text;
+  }
+
+  function startAttack() {
+    if (battle.ended) return;
+    // 出题
+    const pool = wordBank.filter((w) => w.meaning);
+    if (!pool.length) {
+      alert('词库还是空的，先去「六眼 · 识词」录入单词');
+      return;
+    }
+    ensureAudio();
+    sfxCast();
+    $('btn-attack').classList.add('hidden');
+    $('battle-quiz').classList.remove('hidden');
+    $('battle-feedback').classList.add('hidden');
+    buildBattleQuestion();
+    $('battle-quiz').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function buildBattleQuestion() {
+    const pool = wordBank.filter((w) => w.meaning);
+    battle.currentWord = pool[Math.floor(Math.random() * pool.length)];
+    $('battle-word').textContent = battle.currentWord.word;
+    const box = $('battle-options');
+    box.innerHTML = '';
+    const correct = battle.currentWord.meaning;
+    const opts = [correct];
+    let guard = 0;
+    while (opts.length < 4 && guard < 300) {
+      guard++;
+      const r = pool[Math.floor(Math.random() * pool.length)];
+      if (!r || r.meaning === correct || opts.indexOf(r.meaning) >= 0) continue;
+      opts.push(r.meaning);
+    }
+    while (opts.length < 4) opts.push('（无此义项）');
+    shuffle(opts);
+    opts.forEach((o) => {
+      const btn = document.createElement('button');
+      btn.className = 'opt';
+      btn.textContent = o;
+      btn.addEventListener('click', () => answerBattle(btn, o, correct));
+      box.appendChild(btn);
+    });
+  }
+
+  function answerBattle(btn, chosen, correct) {
+    const opts = document.querySelectorAll('#battle-options .opt');
+    opts.forEach((o) => o.classList.add('disabled'));
+    const isRight = chosen === correct;
+    if (isRight) {
+      btn.classList.add('right');
+      sfxHit();
+    } else {
+      btn.classList.add('wrong');
+      opts.forEach((o) => { if (o.textContent === correct) o.classList.add('right'); });
+      sfxMiss();
+    }
+    $('battle-feedback').classList.remove('hidden');
+    // 更新遗忘曲线
+    scheduleReview(battle.currentWord, isRight);
+    saveWordBank();
+    cloudSyncWords();
+
+    const tech = currentTech();
+    $('battle-feedback').textContent = isRight ? '✅ ' + tech.name + ' 命中！' : '❌ 正确答案：' + correct;
+
+    // 延迟结算，让玩家看到反馈
+    setTimeout(() => {
+      if (isRight) {
+        const dmg = tech.damage;
+        battle.enemyHp = Math.max(0, battle.enemyHp - dmg);
+        battle.combo++;
+        // 检查术式升级
+        const next = currentTech();
+        if (next.name !== tech.name) {
+          sfxUpgrade();
+          if (next.name === '无量空处') sfxVoid();
+        }
+        setDialogue(next.name + ' 命中！' + (next.name === '无量空处' ? '' : ' ' + pick(DIALOGUES.hit)));
+        renderBattle();
+        if (battle.enemyHp <= 0) { endBattle(true); return; }
+      } else {
+        battle.playerHp = Math.max(0, battle.playerHp - 12);
+        battle.combo = 0;
+        setDialogue(pick(DIALOGUES.miss));
+        renderBattle();
+        if (battle.playerHp <= 0) { endBattle(false); return; }
+      }
+      // 下一回合
+      $('battle-quiz').classList.add('hidden');
+      $('btn-attack').classList.remove('hidden');
+    }, 700);
+  }
+
+  function endBattle(win) {
+    battle.ended = true;
+    $('battle-quiz').classList.add('hidden');
+    $('btn-attack').classList.add('hidden');
+    $('battle-result').classList.remove('hidden');
+    if (win) {
+      sfxWin();
+      $('battle-emoji').textContent = '🏆';
+      $('battle-title').textContent = '胜利';
+      $('battle-text').textContent = pick(DIALOGUES.win);
+      setDialogue(pick(DIALOGUES.win));
+    } else {
+      sfxLose();
+      $('battle-emoji').textContent = '💀';
+      $('battle-title').textContent = '失败';
+      $('battle-text').textContent = pick(DIALOGUES.lose);
+      setDialogue(pick(DIALOGUES.lose));
+    }
+    renderBattle();
+  }
+
+  function toggleSound() {
+    soundEnabled = !soundEnabled;
+    $('btn-sound').textContent = soundEnabled ? '🔊 音效开' : '🔇 音效关';
+    if (soundEnabled) ensureAudio();
   }
 
   // 把一批词并入词库（已有则跳过，新词加内容并查释义）
@@ -1100,6 +1314,10 @@
 
     $('btn-generate').addEventListener('click', generate);
     $('btn-identify').addEventListener('click', identifyWords);
+    // 游戏
+    $('btn-attack').addEventListener('click', startAttack);
+    $('btn-sound').addEventListener('click', toggleSound);
+    $('btn-battle-again').addEventListener('click', resetBattle);
     // 短文页里的「去识词」按钮（不在工作台卡片里，需单独绑定）
     const gotoIdentify = $('btn-goto-identify');
     if (gotoIdentify) gotoIdentify.addEventListener('click', () => gotoCard('identify'));

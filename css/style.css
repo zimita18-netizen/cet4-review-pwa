@@ -275,6 +275,36 @@ body { padding-bottom: env(safe-area-inset-bottom); }
 .auth-card .wb-avatar { width: 72px; height: 72px; margin: 0 auto; }
 .auth-info { font-size: 13px; color: var(--muted); text-align: center; }
 
+/* ===== 新宿决战 战斗界面 ===== */
+.battle-card { padding: 18px; }
+.battle-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.battle-fighter { margin-bottom: 6px; }
+.fighter-name { font-size: 14px; font-weight: 700; margin-bottom: 4px; }
+.hp-bar {
+  height: 16px; border-radius: 9px; background: var(--bg-soft);
+  border: 1px solid var(--line); overflow: hidden;
+}
+.hp-fill { height: 100%; width: 100%; border-radius: 8px; transition: width .3s ease; }
+.hp-enemy { background: linear-gradient(90deg, #b23a3a, #e85a5a); }
+.hp-player { background: linear-gradient(90deg, #2ea8e6, #3ec6ff); }
+.hp-num { font-size: 11px; color: var(--muted); text-align: right; margin-top: 2px; }
+.battle-mid {
+  display: flex; align-items: center; justify-content: center; gap: 16px;
+  margin: 10px 0; flex-wrap: wrap;
+}
+.battle-vs { font-size: 22px; font-weight: 900; color: var(--accent); }
+.battle-combo { font-size: 13px; color: var(--muted); }
+.battle-combo b { color: var(--primary); font-size: 15px; }
+.battle-technique {
+  font-size: 13px; font-weight: 700; padding: 3px 12px; border-radius: 14px;
+  background: var(--accent-soft); color: var(--accent);
+}
+.battle-dialogue {
+  font-size: 13px; color: var(--muted); line-height: 1.6;
+  background: var(--bg-soft); border-radius: 10px; padding: 10px 12px;
+  margin: 12px 0;
+}
+
 /* ===== 工作台 ===== */
 .wb-hero { text-align: center; padding: 10px 0 4px; }
 .wb-hero .wb-avatar { width: 100px; height: 100px; border-radius: 50%; object-fit: cover; border: 3px solid var(--primary); box-shadow: 0 0 18px var(--primary-soft); }

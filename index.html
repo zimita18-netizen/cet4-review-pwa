@@ -109,12 +109,52 @@
       </section>
     </section>
 
-    <!-- ===== 游戏中心占位 ===== -->
+    <!-- ===== 游戏 · 新宿决战 ===== -->
     <section class="view hidden" id="view-game">
-      <section class="card placeholder-card">
-        <div class="ph-icon">🎮</div>
-        <h3>对战 · 游戏中心</h3>
-        <p>新宿决战、无量空处打飞机、咒术文字冒险<br>正在开发中，敬请期待～</p>
+      <section class="card battle-card">
+        <div class="battle-head">
+          <span class="result-title">⚔️ 新宿决战</span>
+          <button class="btn-link" id="btn-sound">🔊 音效开</button>
+        </div>
+
+        <!-- 宿傩（敌人） -->
+        <div class="battle-fighter">
+          <div class="fighter-name">👹 宿傩</div>
+          <div class="hp-bar"><div class="hp-fill hp-enemy" id="hp-enemy"></div></div>
+          <div class="hp-num"><span id="hp-enemy-num">100</span> / 100</div>
+        </div>
+
+        <div class="battle-mid">
+          <div class="battle-vs">VS</div>
+          <div class="battle-combo">连击 <b id="combo-count">0</b></div>
+          <div class="battle-technique" id="technique-label">术式：苍</div>
+        </div>
+
+        <!-- 五条悟（玩家） -->
+        <div class="battle-fighter">
+          <div class="fighter-name">🥶 五条悟</div>
+          <div class="hp-bar"><div class="hp-fill hp-player" id="hp-player"></div></div>
+          <div class="hp-num"><span id="hp-player-num">100</span> / 100</div>
+        </div>
+
+        <div class="battle-dialogue" id="battle-dialogue">五条悟：我的学生都在看着呢，可别丢人啊。</div>
+
+        <button class="btn btn-primary btn-wide" id="btn-attack">⚡ 释放术式</button>
+      </section>
+
+      <!-- 答题区 -->
+      <section class="card hidden" id="battle-quiz">
+        <div class="choice-word" id="battle-word">word</div>
+        <div class="choice-options" id="battle-options"></div>
+        <div class="choice-feedback hidden" id="battle-feedback"></div>
+      </section>
+
+      <!-- 结果 -->
+      <section class="card hidden" id="battle-result">
+        <div class="done-emoji" id="battle-emoji">🏆</div>
+        <h3 id="battle-title" style="text-align:center">胜利</h3>
+        <p id="battle-text" style="text-align:center;color:var(--muted)">…</p>
+        <button class="btn btn-primary btn-wide" id="btn-battle-again">再战一局</button>
       </section>
     </section>
 
