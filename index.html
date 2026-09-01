@@ -21,7 +21,6 @@
       </div>
       <div class="topbar-btns">
         <button class="theme-btn" id="btn-theme" title="切换主题">🌙</button>
-        <button class="icon-btn" id="btn-history" title="历史">🕘</button>
         <button class="icon-btn" id="btn-settings" title="设置">⚙️</button>
       </div>
     </div>
@@ -89,7 +88,10 @@
       <section class="card">
         <div class="result-tools">
           <span class="result-title">词库当前 <b id="essay-word-count">0</b> 个词</span>
-          <button class="btn-link" data-goto="identify" id="btn-goto-identify">去识词</button>
+          <span>
+            <button class="btn-link" id="btn-history" title="历史">历史</button>
+            <button class="btn-link" data-goto="identify" id="btn-goto-identify">去识词</button>
+          </span>
         </div>
         <p class="sub" id="essay-empty-tip">还没有词，先去「识词 · 录入」上传截图。</p>
         <button class="btn btn-primary btn-wide" id="btn-generate" disabled>✨ 生成短文</button>
