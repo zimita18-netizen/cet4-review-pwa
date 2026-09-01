@@ -85,11 +85,50 @@
   /* ---------- 视图 ---------- */
   let currentImages = [];   // dataURI 数组（支持多张截图）
 
+  const VIEWS = ['view-workbench', 'view-essay', 'view-game', 'view-words'];
+  function showView(name) {
+    VIEWS.forEach((v) => $(v).classList.toggle('hidden', v !== name));
+    $('btn-back').classList.toggle('hidden', name === 'view-workbench');
+    window.scrollTo(0, 0);
+  }
+  function gotoCard(name) {
+    if (name === 'essay' || name === 'game' || name === 'words') {
+      showView('view-' + name);
+    } else if (name === 'history') {
+      openHistory();
+    } else if (name === 'settings') {
+      openSettings();
+    }
+  }
+
+  /* ---------- 主题 ---------- */
+  const THEME_KEY = 'cet4essay_theme_v1';
+  function applyTheme(theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+    const btn = $('btn-theme');
+    if (btn) btn.textContent = theme === 'dark' ? '☀️' : '🌙';
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute('content', theme === 'dark' ? '#0e0a18' : '#f5f7fa');
+  }
+  function loadTheme() {
+    let t = 'light';
+    try { t = localStorage.getItem(THEME_KEY) || 'light'; } catch (e) { /* ignore */ }
+    applyTheme(t);
+  }
+  function toggleTheme() {
+    const cur = document.documentElement.getAttribute('data-theme') || 'light';
+    const next = cur === 'dark' ? 'light' : 'dark';
+    applyTheme(next);
+    try { localStorage.setItem(THEME_KEY, next); } catch (e) { /* ignore */ }
+  }
+
   function init() {
+    loadTheme();
     bind();
     loadHistory();
     syncCfgToUI();
     refreshGenerateBtn();
+    showView('view-workbench');
   }
 
   function syncCfgToUI() {
@@ -698,6 +737,13 @@
 
   /* ---------- 事件 ---------- */
   function bind() {
+    // 工作台卡片 + 返回 + 主题
+    document.querySelectorAll('.wb-card[data-goto]').forEach((c) => {
+      c.addEventListener('click', () => gotoCard(c.dataset.goto));
+    });
+    $('btn-back').addEventListener('click', () => showView('view-workbench'));
+    $('btn-theme').addEventListener('click', toggleTheme);
+
     $('file-input').addEventListener('change', (e) => {
       if (e.target.files && e.target.files.length) handleFiles(e.target.files);
     });

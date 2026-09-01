@@ -6,8 +6,8 @@
   <meta name="theme-color" content="#3b6ea5">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="单词短文">
-  <title>单词短文 · 把今天的词串成故事</title>
+  <meta name="apple-mobile-web-app-title" content="五条悟单词">
+  <title>五条悟单词工作台</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" href="icons/icon-180.png">
   <link rel="stylesheet" href="css/style.css">
@@ -15,8 +15,12 @@
 <body>
   <header class="topbar">
     <div class="topbar-inner">
-      <h1 class="brand" id="title-bar"><img class="brand-icon" src="assets/icon-q-smile.png" alt="">单词短文</h1>
+      <div class="topbar-left">
+        <button class="back-btn hidden" id="btn-back">‹ 返回</button>
+        <h1 class="brand" id="title-bar"><img class="brand-icon" src="assets/icon-q-smile.png" alt="">五条悟单词工作台</h1>
+      </div>
       <div class="topbar-btns">
+        <button class="theme-btn" id="btn-theme" title="切换主题">🌙</button>
         <button class="icon-btn" id="btn-history" title="历史">🕘</button>
         <button class="icon-btn" id="btn-settings" title="设置">⚙️</button>
       </div>
@@ -24,30 +28,87 @@
   </header>
 
   <main class="container">
-    <!-- 上传区 -->
-    <section class="card">
-      <label class="upload-zone" id="upload-zone" for="file-input">
-        <input type="file" id="file-input" accept="image/*" multiple style="display:none">
-        <div class="upload-icon">🖼️</div>
-        <div class="upload-text" id="upload-text">点这里，上传今天背单词的截图</div>
-        <div class="upload-sub">（可从相册多选，一次传多张）</div>
-      </label>
-      <div class="preview hidden" id="preview-box">
-        <div class="preview-grid" id="preview-grid"></div>
-        <button class="btn-remove" id="btn-remove">✕ 清空重选</button>
+    <!-- ===== 工作台首页 ===== -->
+    <section class="view" id="view-workbench">
+      <div class="wb-hero">
+        <img class="wb-avatar" src="assets/icon-q-smile.png" alt="五条悟">
+        <h2>五条悟单词工作台</h2>
+        <p class="wb-sub" id="wb-tip">「最强的咒术师，也要背单词。」</p>
       </div>
-      <button class="btn btn-primary btn-wide" id="btn-generate" disabled>✨ 生成短文</button>
-      <div class="gen-status hidden" id="gen-status"></div>
+      <div class="wb-grid">
+        <div class="wb-card" data-goto="essay">
+          <img class="wb-icon" src="assets/icon-q-wink.png" alt="">
+          <div class="wb-name">施术 · 生成短文</div>
+          <div class="wb-desc">截图识词 → 一篇短文</div>
+        </div>
+        <div class="wb-card" data-goto="game">
+          <img class="wb-icon" src="assets/icon-blindfold.png" alt="">
+          <div class="wb-name">对战 · 游戏中心</div>
+          <div class="wb-desc">玩游戏记单词</div>
+        </div>
+        <div class="wb-card" data-goto="words">
+          <img class="wb-icon" src="assets/icon-q-thumbs.png" alt="">
+          <div class="wb-name">咒力池 · 词库复习</div>
+          <div class="wb-desc">遗忘曲线自动复习</div>
+        </div>
+        <div class="wb-card" data-goto="history">
+          <span class="wb-emoji">🕘</span>
+          <div class="wb-name">历史</div>
+          <div class="wb-desc">看过的短文</div>
+        </div>
+        <div class="wb-card" data-goto="settings">
+          <span class="wb-emoji">⚙️</span>
+          <div class="wb-name">设置</div>
+          <div class="wb-desc">模型 / 主题</div>
+        </div>
+      </div>
     </section>
 
-    <!-- 结果区 -->
-    <section class="card result-card hidden" id="result-card">
-      <div class="result-tools">
-        <span class="result-title"><img class="result-title-icon" src="assets/icon-q-wink.png" alt="">你的短文</span>
-        <button class="btn-link" id="btn-copy">复制全文</button>
-      </div>
-      <div class="essay" id="essay-en"></div>
-      <div class="words-chip" id="words-chip"></div>
+    <!-- ===== 短文功能页 ===== -->
+    <section class="view hidden" id="view-essay">
+      <!-- 上传区 -->
+      <section class="card">
+        <label class="upload-zone" id="upload-zone" for="file-input">
+          <input type="file" id="file-input" accept="image/*" multiple style="display:none">
+          <div class="upload-icon">🖼️</div>
+          <div class="upload-text" id="upload-text">点这里，上传今天背单词的截图</div>
+          <div class="upload-sub">（可从相册多选，一次传多张）</div>
+        </label>
+        <div class="preview hidden" id="preview-box">
+          <div class="preview-grid" id="preview-grid"></div>
+          <button class="btn-remove" id="btn-remove">✕ 清空重选</button>
+        </div>
+        <button class="btn btn-primary btn-wide" id="btn-generate" disabled>✨ 生成短文</button>
+        <div class="gen-status hidden" id="gen-status"></div>
+      </section>
+
+      <!-- 结果区 -->
+      <section class="card result-card hidden" id="result-card">
+        <div class="result-tools">
+          <span class="result-title"><img class="result-title-icon" src="assets/icon-q-wink.png" alt="">你的短文</span>
+          <button class="btn-link" id="btn-copy">复制全文</button>
+        </div>
+        <div class="essay" id="essay-en"></div>
+        <div class="words-chip" id="words-chip"></div>
+      </section>
+    </section>
+
+    <!-- ===== 游戏中心占位 ===== -->
+    <section class="view hidden" id="view-game">
+      <section class="card placeholder-card">
+        <div class="ph-icon">🎮</div>
+        <h3>对战 · 游戏中心</h3>
+        <p>新宿决战、无量空处打飞机、咒术文字冒险<br>正在开发中，敬请期待～</p>
+      </section>
+    </section>
+
+    <!-- ===== 词库复习占位 ===== -->
+    <section class="view hidden" id="view-words">
+      <section class="card placeholder-card">
+        <div class="ph-icon">♾️</div>
+        <h3>咒力池 · 词库复习</h3>
+        <p>遗忘曲线（FSRS）自动调度复习<br>正在开发中，敬请期待～</p>
+      </section>
     </section>
   </main>
 
