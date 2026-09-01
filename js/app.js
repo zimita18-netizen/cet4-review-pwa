@@ -11,6 +11,16 @@
   const WORDS_KEY = 'cet4essay_words_v1';
   const BANK_KEY = 'cet4essay_bank_v1';
 
+  /* ---------- Supabase（账号 + 云同步） ---------- */
+  const SUPABASE_URL = 'https://khdkhvujzdndjsspakos.supabase.co';
+  const SUPABASE_ANON = 'sb_publishable_oWXxOuDkNppn43Ld5KDKRQ_z_knOwdC';
+  let supabase = null;
+  let session = null;
+  let authUserId = null;
+  if (typeof window !== 'undefined' && typeof window.supabase !== 'undefined') {
+    supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON, { auth: { persistSession: true, autoRefreshToken: true } });
+  }
+
   /* ---------- 当天识别的词（供短文用） ---------- */
   let todayWords = loadWords();
   function loadWords() {
@@ -118,6 +128,7 @@
   const VIEWS = ['view-workbench', 'view-identify', 'view-essay', 'view-game', 'view-words'];
   function showView(name) {
     VIEWS.forEach((v) => $(v).classList.toggle('hidden', v !== name));
+    $('view-auth').classList.add('hidden');
     $('btn-back').classList.toggle('hidden', name === 'view-workbench');
     if (name === 'view-words') renderBank();
     if (name === 'view-essay') updateEssayInput();
@@ -155,7 +166,97 @@
     try { localStorage.setItem(THEME_KEY, next); } catch (e) { /* ignore */ }
   }
 
-  function init() {
+  /* ---------- 账号（Supabase） ---------- */
+  function showAuth() {
+    VIEWS.forEach((v) => $(v).classList.add('hidden'));
+    $('view-auth').classList.remove('hidden');
+    $('btn-back').classList.add('hidden');
+    window.scrollTo(0, 0);
+  }
+  function authStatus(msg, isErr) {
+    const el = $('auth-status');
+    el.classList.remove('hidden');
+    el.classList.toggle('error', !!isErr);
+    el.textContent = msg;
+  }
+  async function doLogin() {
+    if (!supabase) { authStatus('加载失败，请刷新重试', true); return; }
+    const email = $('auth-email').value.trim();
+    const password = $('auth-password').value;
+    if (!email || !password) { authStatus('请填邮箱和密码', true); return; }
+    authStatus('登录中…');
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) { authStatus('登录失败：' + (error.message || '账号或密码错误'), true); return; }
+    session = data.session;
+    authUserId = data.user.id;
+    authStatus('登录成功，正在同步数据…');
+    await syncFromCloud();
+    enterApp();
+  }
+  async function doSignup() {
+    if (!supabase) { authStatus('加载失败，请刷新重试', true); return; }
+    const email = $('auth-email').value.trim();
+    const password = $('auth-password').value;
+    if (!email || !password) { authStatus('请填邮箱和密码', true); return; }
+    if (password.length < 6) { authStatus('密码至少 6 位', true); return; }
+    authStatus('注册中…');
+    const { data, error } = await supabase.auth.signUp({ email, password });
+    if (error) { authStatus('注册失败：' + (error.message || '邮箱可能已注册'), true); return; }
+    if (data.user && data.session) {
+      session = data.session;
+      authUserId = data.user.id;
+      authStatus('注册成功，进入…');
+      await enterApp();
+    } else {
+      authStatus('注册成功！请去邮箱点确认链接后再登录', false);
+      $('btn-auth-login').textContent = '返回登录';
+    }
+  }
+  function skipAuth() {
+    authStatus('未登录，数据只存本机', false);
+    setTimeout(() => enterApp(), 300);
+  }
+
+  function updateAuthInfo() {
+    const el = $('auth-info');
+    if (!el) return;
+    el.textContent = (session && session.user && session.user.email) ? '已登录：' + session.user.email : '未登录（数据只存本机）';
+  }
+  async function doLogout() {
+    if (supabase) { try { await supabase.auth.signOut(); } catch (e) { /* ignore */ } }
+    session = null;
+    authUserId = null;
+    closeSettings();
+    showAuth();
+  }
+
+  // 从云端拉取词库和历史，替换本地
+  async function syncFromCloud() {
+    if (!supabase || !authUserId) return;
+    try {
+      const { data: words, error: e1 } = await supabase.from('words').select('*');
+      if (!e1 && words) {
+        wordBank = words.map((r) => ({ word: r.word, meaning: r.meaning, state: r.state, addedAt: new Date(r.added_at).getTime(), _id: r.id }));
+        saveWordBank();
+        todayWords = words.map((r) => r.word);
+        saveWords(todayWords);
+      }
+      const { data: essays, error: e2 } = await supabase.from('essays').select('*').order('created_at', { ascending: false }).limit(30);
+      if (!e2 && essays) {
+        const list = essays.map((r) => ({ date: r.created_at, words: r.words_line, segments: r.segments }));
+        localStorage.setItem(HIST_KEY, JSON.stringify(list));
+      }
+    } catch (e) { /* ignore */ }
+  }
+
+  function enterApp() {
+    renderWordPool();
+    updateEssayInput();
+    renderBank();
+    showView('view-workbench');
+  }
+
+  async function init() {
     loadTheme();
     bind();
     loadHistory();
@@ -164,7 +265,21 @@
     updateEssayInput();
     renderBank();
     refreshIdentifyBtn();
-    showView('view-workbench');
+
+    // 检查登录态
+    if (supabase) {
+      try {
+        const { data } = await supabase.auth.getSession();
+        if (data && data.session) {
+          session = data.session;
+          authUserId = data.session.user.id;
+          showView('view-workbench');
+          return;
+        }
+      } catch (e) { /* ignore */ }
+    }
+    // 未登录 → 登录页
+    showAuth();
   }
 
   function syncCfgToUI() {
@@ -470,6 +585,23 @@
       });
     });
     saveWordBank();
+    await cloudSyncWords();
+  }
+
+  // 词库同步到云端（登录后）
+  async function cloudSyncWords() {
+    if (!supabase || !authUserId) return;
+    try {
+      const rows = wordBank.map((w) => ({
+        user_id: authUserId,
+        word: w.word,
+        meaning: w.meaning || '',
+        state: w.state || { ivl: 0, ease: 2.5, due: 0, reps: 0, lapses: 0 }
+      }));
+      // 按 word 去重 upsert
+      const { error } = await supabase.from('words').upsert(rows, { onConflict: 'user_id,word' });
+      if (error) console.warn('词库同步失败', error.message);
+    } catch (e) { /* ignore */ }
   }
 
   async function identifyWords() {
@@ -819,6 +951,10 @@
     });
     list = list.slice(0, 30);
     try { localStorage.setItem(HIST_KEY, JSON.stringify(list)); } catch (e) { /* ignore */ }
+    // 同步到云端
+    if (supabase && authUserId) {
+      supabase.from('essays').insert({ user_id: authUserId, words_line: words, segments: segments }).then(() => {});
+    }
   }
 
   function loadHistory() {
@@ -873,7 +1009,7 @@
   }
 
   /* ---------- 设置 ---------- */
-  function openSettings() { $('settings-mask').classList.remove('hidden'); }
+  function openSettings() { $('settings-mask').classList.remove('hidden'); updateAuthInfo(); }
   function closeSettings() { $('settings-mask').classList.add('hidden'); }
   function openHistory() { loadHistory(); $('history-mask').classList.remove('hidden'); }
   function closeHistory() { $('history-mask').classList.add('hidden'); }
@@ -938,6 +1074,11 @@
     $('file-input').addEventListener('change', (e) => {
       if (e.target.files && e.target.files.length) handleFiles(e.target.files);
     });
+    // 账号
+    $('btn-auth-login').addEventListener('click', doLogin);
+    $('btn-auth-signup').addEventListener('click', doSignup);
+    $('btn-auth-skip').addEventListener('click', skipAuth);
+    $('btn-logout').addEventListener('click', doLogout);
     // 清空重选
     $('btn-remove').addEventListener('click', () => {
       currentImages = [];

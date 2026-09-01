@@ -178,6 +178,11 @@
         <p class="field-hint">key 只存本机、不上传。默认已帮你配好，一般不用改。</p>
         <button class="btn btn-primary" id="btn-save-cfg">保存设置</button>
         <button class="btn btn-ghost" id="btn-test">测试连接</button>
+        <div class="cfg-group" style="margin-top:4px">
+          <div class="cfg-group-title">👤 账号</div>
+          <div class="auth-info" id="auth-info">未登录</div>
+          <button class="btn btn-ghost" id="btn-logout">退出登录</button>
+        </div>
       </div>
     </div>
   </div>
@@ -205,6 +210,22 @@
     </div>
   </div>
 
+  <!-- 登录视图 -->
+  <section class="view hidden" id="view-auth">
+    <div class="auth-card card">
+      <img class="wb-avatar" src="assets/icon-muryo.png" alt="">
+      <h2 style="text-align:center;margin:6px 0 2px">无量空处</h2>
+      <p class="sub" style="text-align:center">登录后可跨设备同步词库</p>
+      <label class="field" style="margin-top:16px"><span>邮箱</span><input type="email" id="auth-email" placeholder="you@example.com" autocomplete="email"></label>
+      <label class="field"><span>密码</span><input type="password" id="auth-password" placeholder="至少6位" autocomplete="current-password"></label>
+      <div class="gen-status hidden" id="auth-status"></div>
+      <button class="btn btn-primary" id="btn-auth-login">登录</button>
+      <button class="btn btn-ghost" id="btn-auth-signup">注册新账号</button>
+      <button class="btn-link" id="btn-auth-skip" style="margin-top:8px">暂不登录，本地使用</button>
+    </div>
+  </section>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="js/config.js"></script>
   <script src="js/app.js"></script>
   <script>
