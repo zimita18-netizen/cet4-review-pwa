@@ -117,11 +117,16 @@
           <button class="btn-link" id="btn-sound">🔊 音效开</button>
         </div>
 
-        <!-- 宿傩（敌人） -->
-        <div class="battle-fighter">
-          <div class="fighter-name">👹 宿傩</div>
-          <div class="hp-bar"><div class="hp-fill hp-enemy" id="hp-enemy"></div></div>
-          <div class="hp-num"><span id="hp-enemy-num">100</span> / 100</div>
+        <!-- 宿傩（敌人，右上） -->
+        <div class="battle-fighter enemy">
+          <div class="fighter-row">
+            <img class="fighter-img" src="assets/sukuna_sword.png" alt="宿傩">
+            <div class="fighter-info">
+              <div class="fighter-name">宿傩</div>
+              <div class="hp-bar"><div class="hp-fill hp-enemy" id="hp-enemy"></div></div>
+              <div class="hp-num"><span id="hp-enemy-num">100</span> / 100</div>
+            </div>
+          </div>
         </div>
 
         <div class="battle-mid">
@@ -130,11 +135,16 @@
           <div class="battle-technique" id="technique-label">术式：苍</div>
         </div>
 
-        <!-- 五条悟（玩家） -->
-        <div class="battle-fighter">
-          <div class="fighter-name">🥶 五条悟</div>
-          <div class="hp-bar"><div class="hp-fill hp-player" id="hp-player"></div></div>
-          <div class="hp-num"><span id="hp-player-num">100</span> / 100</div>
+        <!-- 五条悟（玩家，左下） -->
+        <div class="battle-fighter player">
+          <div class="fighter-row">
+            <img class="fighter-img" src="assets/gojo_blind.png" alt="五条悟">
+            <div class="fighter-info">
+              <div class="fighter-name">五条悟</div>
+              <div class="hp-bar"><div class="hp-fill hp-player" id="hp-player"></div></div>
+              <div class="hp-num"><span id="hp-player-num">100</span> / 100</div>
+            </div>
+          </div>
         </div>
 
         <div class="battle-dialogue" id="battle-dialogue">五条悟：我的学生都在看着呢，可别丢人啊。</div>

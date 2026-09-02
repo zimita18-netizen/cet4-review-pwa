@@ -17,6 +17,10 @@ fetch_q.js
 download_q.js
 make_q_icons.py
 make_new_icons.py
+fetch_sukuna.js
+download_fighters.js
+make_sprites.py
+test_meaning.js
 download.js
 convert.js
 gen_icon.py

@@ -13,7 +13,9 @@ const ASSETS = [
   './assets/icon-q-wink.png',
   './assets/icon-q-thumbs.png',
   './assets/icon-muryo.png',
-  './assets/icon-word.png'
+  './assets/icon-word.png',
+  './assets/gojo_blind.png',
+  './assets/sukuna_sword.png'
 ];
 
 self.addEventListener('install', (e) => {

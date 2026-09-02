@@ -134,6 +134,7 @@
     if (name === 'view-essay') updateEssayInput();
     if (name === 'view-identify') { renderWordPool(); refreshIdentifyBtn(); }
     if (name === 'view-game') resetBattle();
+    else stopBgm();
     window.scrollTo(0, 0);
   }
   function gotoCard(name) {
@@ -615,6 +616,40 @@
     [392, 330, 262, 196].forEach((f, i) => beep(f, 0.22, 'sawtooth', 0.2, audioCtx.currentTime + i * 0.15));
   }
 
+  /* ---------- 背景音乐（合成循环氛围乐） ---------- */
+  let bgmTimer = null;
+  let bgmOn = false;
+  function bgmTick() {
+    if (!bgmOn || !audioCtx) return;
+    const t = audioCtx.currentTime;
+    // 低沉的持续低音底（咒术回战的压抑氛围）
+    const osc = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.value = 110;
+    g.gain.setValueAtTime(0.06, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 1.4);
+    osc.connect(g); g.connect(audioCtx.destination);
+    osc.start(t); osc.stop(t + 1.4);
+    // 每 4 拍一个高一点的音
+    bgmTimer = setTimeout(() => {
+      const o2 = audioCtx.createOscillator();
+      const g2 = audioCtx.createGain();
+      o2.type = 'sine';
+      o2.frequency.value = 220;
+      g2.gain.setValueAtTime(0.04, audioCtx.currentTime);
+      g2.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.8);
+      o2.connect(g2); g2.connect(audioCtx.destination);
+      o2.start(); o2.stop(audioCtx.currentTime + 0.8);
+      bgmTimer = setTimeout(bgmTick, 1000);
+    }, 700);
+  }
+  function startBgm() {
+    ensureAudio();
+    if (!bgmOn) { bgmOn = true; bgmTick(); }
+  }
+  function stopBgm() { bgmOn = false; if (bgmTimer) clearTimeout(bgmTimer); }
+
   /* ============ 新宿决战 游戏 ============ */
   const TECHNIQUES = [
     { name: '苍', combo: 0, damage: 15 },
@@ -648,6 +683,7 @@
     $('battle-quiz').classList.add('hidden');
     $('btn-attack').classList.remove('hidden');
     setDialogue('五条悟：我的学生都在看着呢，可别丢人啊。');
+    if (soundEnabled) startBgm();
   }
 
   function renderBattle() {
@@ -663,9 +699,19 @@
     $('battle-dialogue').textContent = text;
   }
 
-  function startAttack() {
+  async function startAttack() {
     if (battle.ended) return;
-    // 出题
+    // 补查缺失的释义（防止出题时没有中文选项）
+    const noMeaning = wordBank.filter((w) => !w.meaning).map((w) => w.word);
+    if (noMeaning.length) {
+      try {
+        const meanings = await fetchMeanings(noMeaning);
+        wordBank.forEach((w) => {
+          if (!w.meaning && meanings[w.word.toLowerCase()]) w.meaning = meanings[w.word.toLowerCase()];
+        });
+        saveWordBank();
+      } catch (e) { /* ignore */ }
+    }
     const pool = wordBank.filter((w) => w.meaning);
     if (!pool.length) {
       alert('词库还是空的，先去「六眼 · 识词」录入单词');
@@ -779,7 +825,7 @@
   function toggleSound() {
     soundEnabled = !soundEnabled;
     $('btn-sound').textContent = soundEnabled ? '🔊 音效开' : '🔇 音效关';
-    if (soundEnabled) ensureAudio();
+    if (soundEnabled) { ensureAudio(); startBgm(); } else { stopBgm(); }
   }
 
   // 把一批词并入词库（已有则跳过，新词加内容并查释义）

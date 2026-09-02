@@ -279,6 +279,10 @@ body { padding-bottom: env(safe-area-inset-bottom); }
 .battle-card { padding: 18px; }
 .battle-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
 .battle-fighter { margin-bottom: 6px; }
+.battle-fighter .fighter-row { display: flex; align-items: center; gap: 12px; }
+.battle-fighter.enemy .fighter-row { flex-direction: row-reverse; }
+.battle-fighter .fighter-img { width: 78px; height: 116px; object-fit: contain; flex-shrink: 0; }
+.battle-fighter .fighter-info { flex: 1; }
 .fighter-name { font-size: 14px; font-weight: 700; margin-bottom: 4px; }
 .hp-bar {
   height: 16px; border-radius: 9px; background: var(--bg-soft);
