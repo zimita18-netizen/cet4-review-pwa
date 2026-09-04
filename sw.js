@@ -1,5 +1,5 @@
 /* 无量空处 · Service Worker（离线缓存） */
-const CACHE = 'cet4essay-v9';
+const CACHE = 'cet4essay-v10';
 const ASSETS = [
   './',
   './index.html',
