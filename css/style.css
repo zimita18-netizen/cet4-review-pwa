@@ -237,6 +237,13 @@ body { padding-bottom: env(safe-area-inset-bottom); }
   animation: slideup .25s ease;
 }
 :root[data-theme="light"] .drawer { background: #ffffff; }
+/* 设置抽屉内部不透明 */
+.drawer .cfg-group { background: #241b3d; }
+:root[data-theme="light"] .drawer .cfg-group { background: #f5f7fa; }
+.drawer .field input { background: #2d214a; }
+:root[data-theme="light"] .drawer .field input { background: #ffffff; }
+.drawer .field input:focus { background: #2d214a; }
+:root[data-theme="light"] .drawer .field input:focus { background: #ffffff; }
 @keyframes slideup { from { transform: translateY(40px); opacity: 0; } to { transform: none; opacity: 1; } }
 .drawer-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
 .drawer-title { font-size: 16px; font-weight: 700; }
