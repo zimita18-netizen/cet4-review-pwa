@@ -2,8 +2,8 @@
 /* 浅色主题(默认) */
 :root, :root[data-theme="light"] {
   --bg: #f5f7fa;
-  --bg-soft: #eef1f6;
-  --card: #ffffff;
+  --bg-soft: rgba(238, 241, 246, 0.3);
+  --card: transparent;
   --glass: rgba(255, 255, 255, 0.72);
   --text: #1f2a37;
   --muted: #7b8795;
@@ -25,8 +25,8 @@
 /* 深色主题(暗黑 · 五条悟) */
 :root[data-theme="dark"] {
   --bg: #0e0a18;
-  --bg-soft: #171126;
-  --card: #1a1430;
+  --bg-soft: rgba(23, 17, 38, 0.3);
+  --card: transparent;
   --glass: rgba(255, 255, 255, 0.06);
   --text: #f0f4fa;
   --muted: #9aa3b2;
