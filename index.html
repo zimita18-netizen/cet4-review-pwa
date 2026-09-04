@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta name="theme-color" content="#3ec6ff">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -11,8 +12,21 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" href="icons/icon-180.png">
   <link rel="stylesheet" href="css/style.css">
+<style>
+  .bg-wallpaper {
+    position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background: linear-gradient(rgba(14,10,24,0.85), rgba(14,10,24,0.93)),
+                url('assets/bg-gojo.jpg') center top / cover no-repeat;
+  }
+  :root[data-theme="light"] .bg-wallpaper {
+    background: linear-gradient(rgba(245,247,250,0.90), rgba(245,247,250,0.95)),
+                url('assets/bg-gojo.jpg') center top / cover no-repeat;
+  }
+  body > *:not(.bg-wallpaper) { position: relative; z-index: 1; }
+</style>
 </head>
 <body>
+  <div class="bg-wallpaper"></div>
   <header class="topbar">
     <div class="topbar-inner">
       <div class="topbar-left">
@@ -39,6 +53,7 @@
           <img class="wb-icon" src="assets/icon-word.png" alt="">
           <div class="wb-name">六眼 · 识词</div>
           <div class="wb-desc">截图识词 → 进词库</div>
+          <span class="wb-badge" id="wb-badge-identify">0 词</span>
         </div>
         <div class="wb-card" data-goto="essay">
           <img class="wb-icon" src="assets/icon-q-wink.png" alt="">
@@ -49,11 +64,13 @@
           <img class="wb-icon" src="assets/icon-blindfold.png" alt="">
           <div class="wb-name">对战 · 游戏中心</div>
           <div class="wb-desc">玩游戏记单词</div>
+          <span class="wb-badge" id="wb-badge-game">0 胜</span>
         </div>
         <div class="wb-card" data-goto="words">
           <img class="wb-icon" src="assets/icon-q-thumbs.png" alt="">
           <div class="wb-name">咒力池 · 词库复习</div>
           <div class="wb-desc">遗忘曲线自动复习</div>
+          <span class="wb-badge" id="wb-badge-words">0 待复习</span>
         </div>
       </div>
     </section>
@@ -111,20 +128,88 @@
 
     <!-- ===== 游戏 · 新宿决战 ===== -->
     <section class="view hidden" id="view-game">
-      <section class="card battle-card">
+
+      <!-- 游戏选择菜单 -->
+      <section class="card" id="game-select">
+        <div class="result-title" style="margin-bottom:14px">⚔️ 术式游戏馆</div>
+        <p class="sub" style="margin-bottom:16px">选择一个游戏，边玩边背单词</p>
+        <div class="game-list">
+          <button class="game-card" data-game="battle">
+            <div class="game-card-icon">⚔️</div>
+            <div class="game-card-body">
+              <div class="game-card-name">新宿决战</div>
+              <div class="game-card-desc">回合制答题对战，连击解锁术式，击败宿傩</div>
+            </div>
+            <span class="game-card-score" id="gc-score-battle">0胜0败</span>
+          </button>
+          <button class="game-card" data-game="speed">
+            <div class="game-card-icon">👁️</div>
+            <div class="game-card-body">
+              <div class="game-card-name">六眼·闪卡竞速</div>
+              <div class="game-card-desc">60秒内快速答题，答对加时答错扣时，刷高分</div>
+            </div>
+            <span class="game-card-score" id="gc-score-speed">最高0</span>
+          </button>
+          <button class="game-card" data-game="match">
+            <div class="game-card-icon">🌀</div>
+            <div class="game-card-body">
+              <div class="game-card-name">领域展开·记忆翻牌</div>
+              <div class="game-card-desc">翻开卡牌配对英文与中文，考验记忆力</div>
+            </div>
+          </button>
+          <button class="game-card" data-game="rain">
+            <div class="game-card-icon">💜</div>
+            <div class="game-card-body">
+              <div class="game-card-name">无量空处·单词雨</div>
+              <div class="game-card-desc">单词从天而降，在落地前选出正确释义</div>
+            </div>
+            <span class="game-card-score" id="gc-score-rain">最高0</span>
+          </button>
+        </div>
+      </section>
+
+      <!-- 新宿决战：难度选择 -->
+      <section class="card hidden" id="battle-difficulty">
+        <div class="result-title" style="margin-bottom:12px">⚔️ 新宿决战</div>
+        <p class="sub" style="margin-bottom:14px">选择难度，开始战斗</p>
+        <div class="diff-list">
+          <button class="diff-card" data-diff="easy">
+            <div class="diff-name">轻松</div>
+            <div class="diff-desc">15秒/题 · 宿傩150血 · 适合入门</div>
+          </button>
+          <button class="diff-card" data-diff="normal">
+            <div class="diff-name">标准</div>
+            <div class="diff-desc">10秒/题 · 宿傩220血 · 均衡对战</div>
+          </button>
+          <button class="diff-card" data-diff="hard">
+            <div class="diff-name">修罗</div>
+            <div class="diff-desc">7秒/题 · 宿傩300血 · 宿傩每3题回血</div>
+          </button>
+        </div>
+        <p class="sub" style="margin-top:10px;font-size:12px">答对自动出下一题，不用反复点击</p>
+      </section>
+
+      <!-- 战斗界面 -->
+      <section class="card battle-card hidden" id="battle-arena">
         <div class="battle-head">
-          <span class="result-title">⚔️ 新宿决战</span>
+          <span class="result-title">⚔️ 新宿决战 <span id="battle-diff-label" class="diff-badge">标准</span></span>
+          <span class="battle-round" id="battle-round">第 1 回合</span>
           <button class="btn-link" id="btn-sound">🔊 音效开</button>
         </div>
+
+        <!-- 术式特效层 + 伤害浮字层 -->
+        <div class="battle-fx" id="battle-fx"></div>
+        <div class="dmg-float" id="dmg-float"></div>
 
         <!-- 宿傩（敌人，右上） -->
         <div class="battle-fighter enemy">
           <div class="fighter-row">
-            <img class="fighter-img" src="assets/sukuna_sword.png" alt="宿傩">
+            <img class="fighter-img sukuna-img" src="assets/sukuna_sword.png" alt="宿傩">
             <div class="fighter-info">
-              <div class="fighter-name">宿傩</div>
+              <div class="fighter-name">宿傩 <span class="rage-label" id="rage-label"></span></div>
               <div class="hp-bar"><div class="hp-fill hp-enemy" id="hp-enemy"></div></div>
               <div class="hp-num"><span id="hp-enemy-num">100</span> / 100</div>
+              <div class="rage-bar"><div class="rage-fill" id="rage-fill"></div></div>
             </div>
           </div>
         </div>
@@ -132,13 +217,14 @@
         <div class="battle-mid">
           <div class="battle-vs">VS</div>
           <div class="battle-combo">连击 <b id="combo-count">0</b></div>
+          <div class="combo-progress"><div class="combo-progress-fill" id="combo-progress-fill"></div></div>
           <div class="battle-technique" id="technique-label">术式：苍</div>
         </div>
 
         <!-- 五条悟（玩家，左下） -->
         <div class="battle-fighter player">
           <div class="fighter-row">
-            <img class="fighter-img" src="assets/gojo_blind.png" alt="五条悟">
+            <img class="fighter-img gojo-img" src="assets/gojo_blind.png" alt="五条悟">
             <div class="fighter-info">
               <div class="fighter-name">五条悟</div>
               <div class="hp-bar"><div class="hp-fill hp-player" id="hp-player"></div></div>
@@ -147,13 +233,12 @@
           </div>
         </div>
 
-        <div class="battle-dialogue" id="battle-dialogue">五条悟：我的学生都在看着呢，可别丢人啊。</div>
-
-        <button class="btn btn-primary btn-wide" id="btn-attack">⚡ 释放术式</button>
+        <div class="battle-dialogue" id="battle-dialogue">五条悟：我的学生都在看着呢，再让我刷会帅吧。</div>
       </section>
 
-      <!-- 答题区 -->
+      <!-- 答题区（嵌入战斗界面下方，自动出题） -->
       <section class="card hidden" id="battle-quiz">
+        <div class="quiz-timer-bar"><div class="quiz-timer-fill" id="quiz-timer-fill"></div></div>
         <div class="choice-word" id="battle-word">word</div>
         <div class="choice-options" id="battle-options"></div>
         <div class="choice-feedback hidden" id="battle-feedback"></div>
@@ -161,10 +246,86 @@
 
       <!-- 结果 -->
       <section class="card hidden" id="battle-result">
+        <div class="battle-result-overlay"></div>
         <div class="done-emoji" id="battle-emoji">🏆</div>
         <h3 id="battle-title" style="text-align:center">胜利</h3>
         <p id="battle-text" style="text-align:center;color:var(--muted)">…</p>
+        <div class="battle-stats" id="battle-stats"></div>
         <button class="btn btn-primary btn-wide" id="btn-battle-again">再战一局</button>
+        <button class="btn btn-ghost" id="btn-battle-menu">选择难度</button>
+        <button class="btn btn-ghost" id="btn-battle-game-select">返回游戏馆</button>
+      </section>
+
+      <!-- ===== 六眼·闪卡竞速 ===== -->
+      <section class="card hidden" id="speed-arena">
+        <div class="speed-head">
+          <span class="result-title">👁️ 六眼·闪卡竞速</span>
+          <button class="btn-link" id="btn-speed-quit">退出</button>
+        </div>
+        <div class="speed-stats">
+          <div class="speed-stat"><span class="speed-stat-val" id="speed-time">60</span><span class="speed-stat-label">剩余秒</span></div>
+          <div class="speed-stat"><span class="speed-stat-val" id="speed-correct">0</span><span class="speed-stat-label">答对</span></div>
+          <div class="speed-stat"><span class="speed-stat-val" id="speed-wrong">0</span><span class="speed-stat-label">答错</span></div>
+          <div class="speed-stat"><span class="speed-stat-val" id="speed-combo">0</span><span class="speed-stat-label">连击</span></div>
+        </div>
+        <div class="speed-timer-bar"><div class="speed-timer-fill" id="speed-timer-fill"></div></div>
+        <div class="speed-word" id="speed-word">准备开始</div>
+        <div class="speed-options" id="speed-options"></div>
+      </section>
+      <section class="card hidden" id="speed-result">
+        <div class="done-emoji" id="speed-emoji">⚡</div>
+        <h3 style="text-align:center" id="speed-result-title">时间到</h3>
+        <div class="speed-result-stats" id="speed-result-stats"></div>
+        <div class="speed-best" id="speed-best"></div>
+        <button class="btn btn-primary btn-wide" id="btn-speed-again">再来一次</button>
+        <button class="btn btn-ghost" id="btn-speed-menu">返回游戏馆</button>
+      </section>
+
+      <!-- ===== 领域展开·记忆翻牌 ===== -->
+      <section class="card hidden" id="match-arena">
+        <div class="match-head">
+          <span class="result-title">🌀 领域展开·记忆翻牌</span>
+          <button class="btn-link" id="btn-match-quit">退出</button>
+        </div>
+        <div class="match-stats">
+          <div class="match-stat"><span class="match-stat-val" id="match-pairs">0/8</span><span class="match-stat-label">已配对</span></div>
+          <div class="match-stat"><span class="match-stat-val" id="match-moves">0</span><span class="match-stat-label">翻牌数</span></div>
+          <div class="match-stat"><span class="match-stat-val" id="match-time">0s</span><span class="match-stat-label">用时</span></div>
+        </div>
+        <div class="match-board" id="match-board"></div>
+      </section>
+      <section class="card hidden" id="match-result">
+        <div class="done-emoji" id="match-emoji">🌀</div>
+        <h3 style="text-align:center" id="match-result-title">领域解除</h3>
+        <div class="match-result-stats" id="match-result-stats"></div>
+        <button class="btn btn-primary btn-wide" id="btn-match-again">再来一局</button>
+        <button class="btn btn-ghost" id="btn-match-menu">返回游戏馆</button>
+      </section>
+
+      <!-- ===== 无量空处·单词雨 ===== -->
+      <section class="card hidden" id="rain-arena">
+        <div class="rain-head">
+          <span class="result-title">💜 无量空处·单词雨</span>
+          <button class="btn-link" id="btn-rain-quit">退出</button>
+        </div>
+        <div class="rain-stats">
+          <div class="rain-stat"><span class="rain-stat-val" id="rain-score">0</span><span class="rain-stat-label">得分</span></div>
+          <div class="rain-stat"><span class="rain-stat-val" id="rain-lives">3</span><span class="rain-stat-label">生命</span></div>
+          <div class="rain-stat"><span class="rain-stat-val" id="rain-combo">0</span><span class="rain-stat-label">连击</span></div>
+          <div class="rain-stat"><span class="rain-stat-val" id="rain-level">1</span><span class="rain-stat-label">层级</span></div>
+        </div>
+        <div class="rain-arena" id="rain-arena-area">
+          <div class="rain-zone" id="rain-zone"></div>
+          <div class="rain-options" id="rain-options"></div>
+        </div>
+      </section>
+      <section class="card hidden" id="rain-result">
+        <div class="done-emoji" id="rain-emoji">💜</div>
+        <h3 style="text-align:center" id="rain-result-title">领域解除</h3>
+        <div class="rain-result-stats" id="rain-result-stats"></div>
+        <div class="rain-best" id="rain-best"></div>
+        <button class="btn btn-primary btn-wide" id="btn-rain-again">再来一次</button>
+        <button class="btn btn-ghost" id="btn-rain-menu">返回游戏馆</button>
       </section>
     </section>
 
@@ -173,9 +334,11 @@
       <section class="card">
         <div class="result-title" style="margin-bottom:10px">♾️ 咒力池</div>
         <div class="stats-row">
-          <div class="stat"><div class="num" id="bank-total">0</div><div class="lab">词库总量</div></div>
-          <div class="stat"><div class="num" id="bank-due">0</div><div class="lab">今天该复习</div></div>
-          <div class="stat"><div class="num" id="bank-mastered">0</div><div class="lab">已掌握</div></div>
+          <div class="stat"><div class="num" id="bank-total">0</div><div class="lab">👁 词库总量</div></div>
+          <div class="stat"><div class="num" id="bank-new">0</div><div class="lab">🌀 新词</div></div>
+          <div class="stat"><div class="num" id="bank-learning">0</div><div class="lab">🔵 学习中</div></div>
+          <div class="stat"><div class="num" id="bank-due">0</div><div class="lab">🟣 待复习</div></div>
+          <div class="stat"><div class="num" id="bank-mastered">0</div><div class="lab">⚡ 已掌握</div></div>
         </div>
       </section>
 

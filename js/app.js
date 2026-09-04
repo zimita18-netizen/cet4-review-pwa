@@ -36,17 +36,48 @@
   function loadWordBank() {
     try {
       const arr = JSON.parse(localStorage.getItem(BANK_KEY) || '[]');
-      return arr.map((it) => (typeof it === 'string'
+      let list = arr.map((it) => (typeof it === 'string'
         ? { word: it, meaning: '', addedAt: Date.now(), state: { ivl: 0, ease: 2.5, due: 0, reps: 0, lapses: 0 } }
         : it));
+      // 去重：同词只保留第一条（合并释义）
+      var seen = {};
+      var deduped = [];
+      list.forEach(function (it) {
+        var key = (it.word || '').toLowerCase().trim();
+        if (!key || seen[key]) return;
+        seen[key] = true;
+        // 清理释义：去掉所有英文（中文释义不该有英文单词）
+        if (it.meaning) {
+          it.meaning = it.meaning.replace(/[A-Za-z]+/g, '')
+            .replace(/[；;]+\s*[；;]*/g, '；')
+            .replace(/^[\s；;,.，。]+|[\s；;,.，。]+$/g, '')
+            .replace(/\s{2,}/g, ' ')
+            .trim();
+        }
+        deduped.push(it);
+      });
+      if (deduped.length !== list.length) {
+        try { localStorage.setItem(BANK_KEY, JSON.stringify(deduped)); } catch (e) { /* ignore */ }
+      }
+      return deduped;
     } catch (e) { /* ignore */ }
     return [];
   }
   function saveWordBank() {
+    var seen = {};
+    var deduped = [];
+    wordBank.forEach(function (it) {
+      var key = (it.word || '').toLowerCase().trim();
+      if (!key || seen[key]) return;
+      seen[key] = true;
+      deduped.push(it);
+    });
+    if (deduped.length !== wordBank.length) wordBank = deduped;
     try { localStorage.setItem(BANK_KEY, JSON.stringify(wordBank)); } catch (e) { /* ignore */ }
   }
   function findWord(w) {
-    return wordBank.find((x) => x.word === w);
+    var lw = (w || '').toLowerCase().trim();
+    return wordBank.find((x) => (x.word || '').toLowerCase().trim() === lw);
   }
 
   /* ---------- 手动标红的生词集合（持久化） ---------- */
@@ -124,6 +155,9 @@
 
   /* ---------- 视图 ---------- */
   let currentImages = [];   // dataURI 数组（支持多张截图）
+  var speedGame = null;
+  var matchGame = null;
+  var rainGame = null;
 
   const VIEWS = ['view-workbench', 'view-identify', 'view-essay', 'view-game', 'view-words'];
   function showView(name) {
@@ -133,8 +167,9 @@
     if (name === 'view-words') renderBank();
     if (name === 'view-essay') updateEssayInput();
     if (name === 'view-identify') { renderWordPool(); refreshIdentifyBtn(); }
-    if (name === 'view-game') resetBattle();
+    if (name === 'view-game') showGameSelect();
     else stopBgm();
+    if (name === 'view-workbench') updateWbBadges();
     window.scrollTo(0, 0);
   }
   function gotoCard(name) {
@@ -145,6 +180,16 @@
     } else if (name === 'settings') {
       openSettings();
     }
+  }
+
+  function updateWbBadges() {
+    var total = wordBank.length;
+    var due = wordBank.filter(function (w) { return w.due && w.due <= Date.now(); }).length;
+    var wins = parseInt(localStorage.getItem('cet4_battle_wins') || '0', 10);
+    $('wb-badge-identify').textContent = total + ' 词';
+    $('wb-badge-game').textContent = wins + ' 胜';
+    $('wb-badge-words').textContent = due + ' 待复习';
+    $('wb-badge-words').classList.toggle('badge-due', due > 0);
   }
 
   /* ---------- 主题 ---------- */
@@ -513,7 +558,7 @@
     $('btn-generate').disabled = true;
 
     try {
-      status.textContent = '正在根据词库生成短文…';
+      status.innerHTML = '<span class="loading-ring"></span> 正在根据词库生成短文…';
       const wordsLine = todayWords.join(', ');
       const essay = await callWrite(writeEssayPrompt(wordsLine));
       if (!essay.trim()) throw new Error('写文模型没返回短文');
@@ -545,8 +590,20 @@
     const content = (data.choices && data.choices[0].message && data.choices[0].message.content) || '';
     const map = {};
     content.split('\n').forEach((line) => {
-      const m = line.match(/^\s*([A-Za-z][A-Za-z\-'\s]*?)\s*[=＝:：]\s*(.+)\s*$/);
-      if (m) map[m[1].trim().toLowerCase()] = m[2].trim();
+      const m = line.match(/^\s*([A-Za-z][A-Za-z\-']*?)\s*[=＝:：]\s*(.+)\s*$/);
+      if (!m) return;
+      var word = m[1].trim().toLowerCase();
+      var meaning = m[2].trim();
+      // 清理：去掉释义中所有英文（中文释义不该有英文单词）
+      meaning = meaning.replace(/[A-Za-z]+/g, '')
+        .replace(/[；;]+\s*[；;]*/g, '；')
+        .replace(/^[\s；;,.，。]+|[\s；;,.，。]+$/g, '')
+        .replace(/\s{2,}/g, ' ')
+        .trim();
+      // 必须包含中文才存
+      if (/[\u4e00-\u9fff]/.test(meaning)) {
+        map[word] = meaning;
+      }
     });
     return map;
   }
@@ -559,20 +616,41 @@
       s.lapses = 0;
       s.ease = Math.min(3.0, (s.ease || 2.5) + 0.1);
       s.ivl = s.ivl === 0 ? 1 : Math.round(s.ivl * s.ease);
+      s.due = Date.now() + s.ivl * 86400000;
     } else {
       s.reps = 0;
       s.lapses = (s.lapses || 0) + 1;
       s.ease = Math.max(1.3, (s.ease || 2.5) - 0.2);
       s.ivl = 0;
+      // 答错 10 分钟后再复习，不立即 due（避免每局都刷到同样的词）
+      s.due = Date.now() + 600000;
     }
-    s.due = Date.now() + s.ivl * 86400000;
     w.state = s;
     return w;
   }
 
-  /* ============ 音效（Web Audio 合成） ============ */
+  /* ============ 音效系统（真实音频文件 + Web Audio 补充） ============ */
   let audioCtx = null;
   let soundEnabled = true;
+
+  // 音频文件池：每个音效预创建多个 Audio 实例，避免连续播放中断
+  const SFX_POOL_SIZE = 4;
+  const sfxPools = {};
+  const SFX_MAP = {
+    vacuum:       'assets/audio/vacuum_whoosh.mp3',        // 苍（蓝色吸引）
+    laser:        'assets/audio/laser_shot.mp3',            // 苍（能量射击）
+    shockwave:    'assets/audio/energy_shockwave.mp3',     // 赫（红色冲击）
+    swordWhoosh:  'assets/audio/sword_whoosh.mp3',          // 斩击挥空
+    magicSlice:   'assets/audio/magic_sword_slice.mp3',    // 解·斩击
+    swordImpact:  'assets/audio/sword_impact.mp3',         // 命中
+    fireExplosion:'assets/audio/fire_spell_explosion.mp3', // 开·火焰爆炸
+    fireball:     'assets/audio/fireball_spell.mp3',       // 火
+    magicMystery: 'assets/audio/magic_mystery_whoosh.mp3', // 茈/无量空处
+    thunderHit:   'assets/audio/cinematic_thunder_hit.mp3',// 雷击/终极
+    movieImpact:  'assets/audio/movie_impact.mp3'          // 终极命中
+  };
+  let bgmEl = null;
+
   function ensureAudio() {
     if (!audioCtx) {
       const AC = window.AudioContext || window.webkitAudioContext;
@@ -580,110 +658,293 @@
     }
     if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
   }
+
+  function initSfxPools() {
+    if (Object.keys(sfxPools).length) return;
+    Object.keys(SFX_MAP).forEach(function (name) {
+      var pool = [];
+      for (var i = 0; i < SFX_POOL_SIZE; i++) {
+        var a = new Audio(SFX_MAP[name]);
+        a.preload = 'auto';
+        a.volume = 0.7;
+        pool.push(a);
+      }
+      sfxPools[name] = pool;
+    });
+  }
+
+  function playSample(name) {
+    if (!soundEnabled) return;
+    var pool = sfxPools[name];
+    if (!pool) return;
+    for (var i = 0; i < pool.length; i++) {
+      if (pool[i].paused || pool[i].ended) {
+        pool[i].currentTime = 0;
+        pool[i].play().catch(function () {});
+        return;
+      }
+    }
+    pool[0].currentTime = 0;
+    pool[0].play().catch(function () {});
+  }
+
+  // Web Audio 合成补充（用于细节音）
   function beep(freq, dur, type, gain, when) {
     if (!soundEnabled || !audioCtx) return;
-    const t = when || audioCtx.currentTime;
-    const osc = audioCtx.createOscillator();
-    const g = audioCtx.createGain();
+    var t = when || audioCtx.currentTime;
+    var osc = audioCtx.createOscillator();
+    var g = audioCtx.createGain();
     osc.type = type || 'sine';
     osc.frequency.value = freq;
-    g.gain.setValueAtTime(gain || 0.2, t);
+    g.gain.setValueAtTime(gain || 0.15, t);
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
     osc.connect(g);
     g.connect(audioCtx.destination);
     osc.start(t);
     osc.stop(t + dur);
   }
-  function sfxHit() {         // 命中
-    beep(880, 0.08, 'square', 0.25); beep(1320, 0.12, 'square', 0.2, audioCtx.currentTime + 0.03);
+
+  // 术式音效：根据不同术式播放不同组合
+  function sfxCast() {
+    ensureAudio();
+    initSfxPools();
+    playSample('vacuum');
   }
-  function sfxMiss() {        // 答错
-    beep(200, 0.25, 'sawtooth', 0.22); beep(140, 0.3, 'sawtooth', 0.2, audioCtx.currentTime + 0.05);
+  function sfxHit(techName) {
+    if (techName === '苍') { playSample('laser'); playSample('swordImpact'); }
+    else if (techName === '赫') { playSample('shockwave'); playSample('movieImpact'); }
+    else if (techName === '茈') { playSample('magicMystery'); playSample('thunderHit'); }
+    else if (techName === '无量空处') { playSample('magicMystery'); playSample('thunderHit'); playSample('movieImpact'); }
+    else { playSample('swordImpact'); }
   }
-  function sfxCast() {        // 蓄力
-    beep(300, 0.2, 'sawtooth', 0.15); beep(500, 0.25, 'sawtooth', 0.15, audioCtx.currentTime + 0.1);
+  function sfxMiss() {
+    playSample('swordWhoosh');
+    beep(200, 0.2, 'sawtooth', 0.12);
   }
-  function sfxUpgrade() {     // 术式升级
-    beep(660, 0.1, 'square', 0.22); beep(880, 0.1, 'square', 0.22, audioCtx.currentTime + 0.07); beep(1100, 0.14, 'square', 0.24, audioCtx.currentTime + 0.14);
+  function sfxUpgrade() {
+    playSample('magicSlice');
+    beep(880, 0.1, 'square', 0.15, audioCtx.currentTime + 0.07);
+    beep(1100, 0.14, 'square', 0.17, audioCtx.currentTime + 0.14);
   }
-  function sfxVoid() {        // 无量空处
-    beep(520, 0.6, 'sine', 0.25); beep(780, 0.6, 'sine', 0.2, audioCtx.currentTime + 0.1); beep(1040, 0.6, 'sine', 0.18, audioCtx.currentTime + 0.2);
+  function sfxVoid() {
+    playSample('magicMystery');
+    playSample('thunderHit');
+    playSample('movieImpact');
   }
-  function sfxWin() {         // 胜利
-    [523, 659, 784, 1047].forEach((f, i) => beep(f, 0.16, 'square', 0.24, audioCtx.currentTime + i * 0.12));
+  function sfxWin() {
+    playSample('thunderHit');
+    [523, 659, 784, 1047].forEach(function (f, i) { beep(f, 0.16, 'square', 0.18, audioCtx.currentTime + i * 0.12); });
   }
-  function sfxLose() {        // 失败
-    [392, 330, 262, 196].forEach((f, i) => beep(f, 0.22, 'sawtooth', 0.2, audioCtx.currentTime + i * 0.15));
+  function sfxLose() {
+    playSample('fireExplosion');
+    [392, 330, 262, 196].forEach(function (f, i) { beep(f, 0.22, 'sawtooth', 0.15, audioCtx.currentTime + i * 0.15); });
   }
 
-  /* ---------- 背景音乐（合成循环氛围乐） ---------- */
-  let bgmTimer = null;
-  let bgmOn = false;
-  function bgmTick() {
-    if (!bgmOn || !audioCtx) return;
-    const t = audioCtx.currentTime;
-    // 低沉的持续低音底（咒术回战的压抑氛围）
-    const osc = audioCtx.createOscillator();
-    const g = audioCtx.createGain();
-    osc.type = 'triangle';
-    osc.frequency.value = 110;
-    g.gain.setValueAtTime(0.06, t);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + 1.4);
-    osc.connect(g); g.connect(audioCtx.destination);
-    osc.start(t); osc.stop(t + 1.4);
-    // 每 4 拍一个高一点的音
-    bgmTimer = setTimeout(() => {
-      const o2 = audioCtx.createOscillator();
-      const g2 = audioCtx.createGain();
-      o2.type = 'sine';
-      o2.frequency.value = 220;
-      g2.gain.setValueAtTime(0.04, audioCtx.currentTime);
-      g2.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.8);
-      o2.connect(g2); g2.connect(audioCtx.destination);
-      o2.start(); o2.stop(audioCtx.currentTime + 0.8);
-      bgmTimer = setTimeout(bgmTick, 1000);
-    }, 700);
-  }
+  /* ---------- BGM（真实音频文件循环播放） ---------- */
   function startBgm() {
     ensureAudio();
-    if (!bgmOn) { bgmOn = true; bgmTick(); }
+    if (!bgmEl) {
+      bgmEl = new Audio('assets/audio/bgm-battle-v1.mp3');
+    bgmEl.loop = true;
+    bgmEl.volume = 0.05;
+    }
+    if (soundEnabled) {
+      bgmEl.play().catch(function () {});
+    }
   }
-  function stopBgm() { bgmOn = false; if (bgmTimer) clearTimeout(bgmTimer); }
+  function stopBgm() {
+    if (bgmEl) { bgmEl.pause(); }
+  }
 
   /* ============ 新宿决战 游戏 ============ */
   const TECHNIQUES = [
-    { name: '苍', combo: 0, damage: 15 },
-    { name: '赫', combo: 3, damage: 25 },
-    { name: '茈', combo: 6, damage: 40 },
-    { name: '无量空处', combo: 10, damage: 100 }
+    { name: '苍', combo: 0, damage: 12 },
+    { name: '赫', combo: 4, damage: 20 },
+    { name: '茈', combo: 8, damage: 35 },
+    { name: '无量空处', combo: 14, damage: 60 }
   ];
   const DIALOGUES = {
-    cast: ['五条悟：术式顺转「苍」！', '五条悟：术式反转「赫」！', '五条悟：虚式「茈」！', '五条悟：领域展开——无量空处！'],
-    hit: ['五条悟：就这？', '五条悟：还不够啊。', '五条悟：再让我刷会帅。', '宿傩：有意思…'],
-    miss: ['宿傩：太慢了。', '宿傩：就这点本事？', '五条悟：啧，分心了。'],
-    win: ['五条悟：你已经成长到这种地步了，老师为你骄傲。', '五条悟：赢了，就这水平？'],
-    lose: ['宿傩：就你这点咒力，也敢挑战我？', '宿傩：太弱了。']
+    cast: [
+      '五条悟：术式顺转「苍」。', '五条悟：术式反转「赫」。',
+      '五条悟：虚式「茈」！', '五条悟：领域展开——无量空处。',
+      '五条悟：这一击，可别移开视线。'
+    ],
+    hit: ['五条悟：就这？', '五条悟：还不够啊。', '五条悟：再让我刷会帅吧。', '宿傩：有意思…', '五条悟：你还是不行啊。'],
+    miss: ['宿傩：太慢了。', '宿傩：就这点本事？', '宿傩：你才是挑战者。', '五条悟：啧，分心了。', '宿傩：让我看看你能撑到什么时候。'],
+    lowhp_gojo: ['五条悟：还没结束呢。'],
+    lowhp_sukuna: ['宿傩：这样才有意思。'],
+    win: ['五条悟：这场胜负，已经定了。', '五条悟：你已经成长到了这种地步啊，老师为你感到骄傲。'],
+    lose: ['宿傩：到此为止。', '宿傩：就你这点咒力，也敢挑战我？']
   };
   const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
-  let battle = { playerHp: 100, enemyHp: 100, combo: 0, techIdx: 0, ended: false };
+  function shuffle(arr) {
+    for (var i = arr.length - 1; i > 0; i--) {
+      var j = Math.floor(Math.random() * (i + 1));
+      var tmp = arr[i]; arr[i] = arr[j]; arr[j] = tmp;
+    }
+  }
+
+  /* ===== 难度配置 ===== */
+  const DIFFICULTIES = {
+    easy:   { label: '轻松', time: 15, enemyHp: 150, enemyDmg: 8,  regen: 0, critRate: 0.15, rageThreshold: 999 },
+    normal: { label: '标准', time: 10, enemyHp: 220, enemyDmg: 12, regen: 0, critRate: 0.10, rageThreshold: 4 },
+    hard:   { label: '修罗', time: 7,  enemyHp: 300, enemyDmg: 16, regen: 5, critRate: 0.05, rageThreshold: 3 }
+  };
+  const STATS_KEY = 'cet4essay_battle_stats_v1';
+
+  /* ===== 原声台词播放 ===== */
+  const VOICE_CLIPS = {
+    '苍': 'assets/audio/voice/gojo-blue.mp3',
+    '赫': 'assets/audio/voice/gojo-red.mp3',
+    '茈': 'assets/audio/voice/gojo-purple.mp3',
+    '无量空处': 'assets/audio/voice/gojo-domain.mp3',
+    'win': 'assets/audio/voice/gojo-win.mp3',
+    'sukuna_atk': 'assets/audio/voice/sukuna-kai.mp3',
+    'sukuna_laugh': 'assets/audio/voice/sukuna-laugh.mp3'
+  };
+  function playVoice(key) {
+    // 台词已移除（用户反馈太吵）
+    return;
+  }
+
+  let battle = null;
+  let battleTimer = null;
+  let battleTimeStart = 0;
+  let battleQuestionCount = 0;
+
+  function loadBattleStats() {
+    try { return JSON.parse(localStorage.getItem(STATS_KEY) || '{}'); } catch (e) { return {}; }
+  }
+  function saveBattleStats(s) {
+    try { localStorage.setItem(STATS_KEY, JSON.stringify(s)); } catch (e) { /* ignore */ }
+  }
+  function getBattleStats() {
+    var s = loadBattleStats();
+    return {
+      wins: s.wins || 0, losses: s.losses || 0,
+      bestCombo: s.bestCombo || 0, totalCorrect: s.totalCorrect || 0, totalWrong: s.totalWrong || 0
+    };
+  }
+  function updateBattleStats(win, combo, correct, wrong) {
+    var s = getBattleStats();
+    if (win) s.wins++; else s.losses++;
+    s.bestCombo = Math.max(s.bestCombo, combo);
+    s.totalCorrect += correct;
+    s.totalWrong += wrong;
+    saveBattleStats(s);
+  }
 
   function currentTech() {
-    let idx = 0;
-    for (let i = 0; i < TECHNIQUES.length; i++) {
+    var idx = 0;
+    for (var i = 0; i < TECHNIQUES.length; i++) {
       if (battle.combo >= TECHNIQUES[i].combo) idx = i;
     }
     return TECHNIQUES[idx];
   }
 
-  function resetBattle() {
-    battle = { playerHp: 100, enemyHp: 100, combo: 0, techIdx: 0, ended: false };
-    renderBattle();
-    $('battle-result').classList.add('hidden');
+ function getGameWordPool(usedList, count) {
+    var pool = wordBank.filter(function (w) { return w.meaning; });
+    if (!pool.length) return [];
+    var used = usedList || [];
+    var avail = pool.filter(function (w) { return used.indexOf(w.word.toLowerCase()) < 0; });
+    if (!avail.length) avail = pool;
+    var now = Date.now();
+    var due = avail.filter(function (w) { return w.state && w.state.due && w.state.due <= now; });
+    var notDue = avail.filter(function (w) { return !w.state || !w.state.due || w.state.due > now; });
+    var src;
+    if (due.length && (Math.random() < 0.7 || !notDue.length)) src = due;
+    else src = notDue.length ? notDue : avail;
+    var result = [];
+    var guard = 0;
+    while (result.length < count && src.length > 0 && guard < 200) {
+      guard++;
+      var idx = Math.floor(Math.random() * src.length);
+      var w = src.splice(idx, 1)[0];
+      result.push(w);
+    }
+    return result;
+  }
+
+  function buildOptions(word, count) {
+    var pool = wordBank.filter(function (w) { return w.meaning; });
+    return pickOptions(pool, word.meaning, 'meaning');
+  }
+
+  function applySm2(w, correct) {
+    scheduleReview(w, correct);
+    saveWordBank();
+    cloudSyncWords();
+  }
+
+  function hideAllGameUI() {
+    $('game-select').classList.add('hidden');
+    $('battle-difficulty').classList.add('hidden');
+    $('battle-arena').classList.add('hidden');
     $('battle-quiz').classList.add('hidden');
-    $('btn-attack').classList.remove('hidden');
-    setDialogue('五条悟：我的学生都在看着呢，可别丢人啊。');
+    $('battle-result').classList.add('hidden');
+    $('speed-arena').classList.add('hidden');
+    $('speed-result').classList.add('hidden');
+    $('match-arena').classList.add('hidden');
+    $('match-result').classList.add('hidden');
+    $('rain-arena').classList.add('hidden');
+    $('rain-result').classList.add('hidden');
+  }
+
+  function showGameSelect() {
+    if (battle) battle.ended = true;
+    if (speedGame) speedGame.active = false;
+    if (matchGame) matchGame.active = false;
+    if (rainGame) rainGame.active = false;
+    hideAllGameUI();
+    $('game-select').classList.remove('hidden');
+    stopBgm();
+    stopTimer();
+    var wins = parseInt(localStorage.getItem('cet4_battle_wins') || '0', 10);
+    var losses = parseInt(localStorage.getItem('cet4_battle_losses') || '0', 10);
+    var speedBest = parseInt(localStorage.getItem('cet4_speed_best') || '0', 10);
+    var rainBest = parseInt(localStorage.getItem('cet4_rain_best') || '0', 10);
+    $('gc-score-battle').textContent = wins + '胜' + losses + '败';
+    $('gc-score-speed').textContent = '最高' + speedBest;
+    $('gc-score-rain').textContent = '最高' + rainBest;
+  }
+
+  function showDifficultyMenu() {
+    $('game-select').classList.add('hidden');
+    $('battle-difficulty').classList.remove('hidden');
+    $('battle-arena').classList.add('hidden');
+    $('battle-quiz').classList.add('hidden');
+    $('battle-result').classList.add('hidden');
+    stopBgm();
+    stopTimer();
+  }
+
+  function startBattle(diff) {
+    var d = DIFFICULTIES[diff];
+    battle = {
+      playerHp: 100, enemyHp: d.enemyHp, maxEnemyHp: d.enemyHp,
+      combo: 0, ended: false, diff: diff,
+      lowHpGojo: false, lowHpSukuna: false,
+      correctCount: 0, wrongCount: 0, questionCount: 0,
+      usedWords: [], sukunaRage: 0, rageActive: false
+    };
+    $('battle-diff-label').textContent = d.label;
+    $('battle-difficulty').classList.add('hidden');
+    $('battle-arena').classList.remove('hidden');
+    $('battle-arena').classList.remove('screen-shake', 'screen-shake-strong');
+    $('battle-result').classList.add('hidden');
+    $('battle-dialogue').classList.remove('dialogue-lowhp');
+    $('rage-label').textContent = '';
+    setDialogue('五条悟：我的学生都在看着呢，再让我刷会帅吧。');
     if (soundEnabled) startBgm();
+    var gojo = document.querySelector('.fighter-img.gojo-img');
+    var sukuna = document.querySelector('.fighter-img.sukuna-img');
+    if (gojo) gojo.classList.remove('anim-hit', 'anim-shake', 'anim-void');
+    if (sukuna) sukuna.classList.remove('anim-hit', 'anim-shake', 'anim-void');
+    var fx = $('battle-fx');
+    if (fx) fx.className = 'battle-fx';
+    renderBattle();
+    nextQuestion();
   }
 
   function renderBattle() {
@@ -692,122 +953,425 @@
     $('hp-enemy').style.width = battle.enemyHp + '%';
     $('hp-enemy-num').textContent = battle.enemyHp;
     $('combo-count').textContent = battle.combo;
-    $('technique-label').textContent = '术式：' + currentTech().name;
+    $('combo-count').classList.toggle('combo-hot', battle.combo >= 5);
+    var tech = currentTech();
+    $('technique-label').textContent = '术式：' + tech.name;
+
+    // 连击进度条
+    var nextTechCombo = null;
+    for (var i = 0; i < TECHNIQUES.length; i++) {
+      if (TECHNIQUES[i].combo > battle.combo) { nextTechCombo = TECHNIQUES[i]; break; }
+    }
+    var progFill = $('combo-progress-fill');
+    if (progFill) {
+      if (nextTechCombo) {
+        var prevCombo = 0;
+        for (var j = TECHNIQUES.length - 1; j >= 0; j--) {
+          if (TECHNIQUES[j].combo <= battle.combo) { prevCombo = TECHNIQUES[j].combo; break; }
+        }
+        var pct = Math.min(100, ((battle.combo - prevCombo) / (nextTechCombo.combo - prevCombo)) * 100);
+        progFill.style.width = pct + '%';
+        progFill.classList.remove('maxed');
+      } else {
+        progFill.style.width = '100%';
+        progFill.classList.add('maxed');
+      }
+    }
+
+    // 宿傩怒气条
+    var d = DIFFICULTIES[battle.diff];
+    var rageFill = $('rage-fill');
+    var rageLabel = $('rage-label');
+    if (rageFill) {
+      var ragePct = Math.min(100, (battle.sukunaRage / d.rageThreshold) * 100);
+      rageFill.style.width = ragePct + '%';
+      if (ragePct >= 100) rageFill.classList.add('full');
+      else rageFill.classList.remove('full');
+    }
+    if (rageLabel) {
+      rageLabel.textContent = battle.rageActive ? '⚡怒' : (battle.sukunaRage > 0 ? '怒+' + battle.sukunaRage : '');
+    }
+
+    if (battle.playerHp <= 30 && battle.playerHp > 0 && !battle.lowHpGojo) {
+      battle.lowHpGojo = true;
+      setDialogue(pick(DIALOGUES.lowhp_gojo));
+      $('battle-dialogue').classList.add('dialogue-lowhp');
+    }
+    if (battle.enemyHp <= 30 && battle.enemyHp > 0 && !battle.lowHpSukuna) {
+      battle.lowHpSukuna = true;
+      setDialogue(pick(DIALOGUES.lowhp_sukuna));
+      $('battle-dialogue').classList.add('dialogue-lowhp');
+    }
   }
 
   function setDialogue(text) {
-    $('battle-dialogue').textContent = text;
+    var el = $('battle-dialogue');
+    el.textContent = text;
+    el.classList.remove('dialogue-flash');
+    void el.offsetWidth;
+    el.classList.add('dialogue-flash');
   }
 
-  async function startAttack() {
-    if (battle.ended) return;
-    // 补查缺失的释义（防止出题时没有中文选项）
-    const noMeaning = wordBank.filter((w) => !w.meaning).map((w) => w.word);
-    if (noMeaning.length) {
-      try {
-        const meanings = await fetchMeanings(noMeaning);
-        wordBank.forEach((w) => {
-          if (!w.meaning && meanings[w.word.toLowerCase()]) w.meaning = meanings[w.word.toLowerCase()];
-        });
-        saveWordBank();
-      } catch (e) { /* ignore */ }
-    }
-    const pool = wordBank.filter((w) => w.meaning);
-    if (!pool.length) {
-      alert('词库还是空的，先去「六眼 · 识词」录入单词');
+  function screenShake(strong) {
+    var arena = $('battle-arena');
+    if (!arena) return;
+    arena.classList.remove('screen-shake', 'screen-shake-strong');
+    void arena.offsetWidth;
+    arena.classList.add(strong ? 'screen-shake-strong' : 'screen-shake');
+    setTimeout(function () {
+      arena.classList.remove('screen-shake', 'screen-shake-strong');
+    }, strong ? 600 : 350);
+  }
+
+  function playTechEffect(techName, isHit) {
+    var fx = $('battle-fx');
+    if (!fx) return;
+    fx.className = 'battle-fx';
+    void fx.offsetWidth;
+    var gojo = document.querySelector('.fighter-img.gojo-img');
+    var sukuna = document.querySelector('.fighter-img.sukuna-img');
+    if (!isHit) {
+      if (gojo) { gojo.classList.remove('anim-shake'); void gojo.offsetWidth; gojo.classList.add('anim-shake'); }
+      fx.classList.add('fx-miss');
+      screenShake(false);
+      playVoice('sukuna_laugh');
+      setTimeout(function () { fx.className = 'battle-fx'; }, 600);
       return;
     }
-    ensureAudio();
-    sfxCast();
-    $('btn-attack').classList.add('hidden');
-    $('battle-quiz').classList.remove('hidden');
-    $('battle-feedback').classList.add('hidden');
-    buildBattleQuestion();
-    $('battle-quiz').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (sukuna) { sukuna.classList.remove('anim-hit'); void sukuna.offsetWidth; sukuna.classList.add('anim-hit'); }
+    playVoice(techName);
+    var techLabel = $('technique-label');
+    if (techLabel) { techLabel.classList.add('tech-active'); setTimeout(function(){ techLabel.classList.remove('tech-active'); }, 600); }
+    switch (techName) {
+      case '苍':
+        fx.classList.add('fx-blue');
+        screenShake(false);
+        break;
+      case '赫':
+        fx.classList.add('fx-red');
+        screenShake(false);
+        break;
+      case '茈':
+        fx.classList.add('fx-purple');
+        screenShake(true);
+        break;
+      case '无量空处':
+        fx.classList.add('fx-void');
+        if (gojo) gojo.classList.add('anim-void');
+        if (sukuna) sukuna.classList.add('anim-void');
+        screenShake(true);
+        break;
+    }
+    setTimeout(function () {
+      fx.className = 'battle-fx';
+      if (gojo) gojo.classList.remove('anim-void');
+      if (sukuna) sukuna.classList.remove('anim-void');
+    }, 1000);
   }
 
-  function buildBattleQuestion() {
-    const pool = wordBank.filter((w) => w.meaning);
-    battle.currentWord = pool[Math.floor(Math.random() * pool.length)];
-    $('battle-word').textContent = battle.currentWord.word;
-    const box = $('battle-options');
-    box.innerHTML = '';
-    const correct = battle.currentWord.meaning;
-    const opts = [correct];
-    let guard = 0;
-    while (opts.length < 4 && guard < 300) {
-      guard++;
-      const r = pool[Math.floor(Math.random() * pool.length)];
-      if (!r || r.meaning === correct || opts.indexOf(r.meaning) >= 0) continue;
-      opts.push(r.meaning);
+  function showDmgFloat(amount, isCrit, isPlayer) {
+    var el = $('dmg-float');
+    if (!el) return;
+    el.className = 'dmg-float';
+    void el.offsetWidth;
+    el.textContent = isCrit ? '-' + amount + '!' : '-' + amount;
+    el.classList.add(isCrit ? 'crit' : 'normal');
+    el.classList.add(isPlayer ? 'on-player' : 'on-enemy');
+    setTimeout(function () { el.className = 'dmg-float'; }, 900);
+  }
+
+  /* ===== 倒计时 ===== */
+  function startTimer(seconds) {
+    stopTimer();
+    battleTimeStart = Date.now();
+    var fill = $('quiz-timer-fill');
+    if (fill) {
+      fill.style.transition = 'none';
+      fill.style.width = '100%';
+      void fill.offsetWidth;
+      fill.style.transition = 'width ' + seconds + 's linear';
+      fill.style.width = '0%';
     }
-    while (opts.length < 4) opts.push('（无此义项）');
-    shuffle(opts);
-    opts.forEach((o) => {
-      const btn = document.createElement('button');
-      btn.className = 'opt';
-      btn.textContent = o;
-      btn.addEventListener('click', () => answerBattle(btn, o, correct));
+    battleTimer = setTimeout(function () {
+      if (!battle || battle.ended) return;
+      var opts = document.querySelectorAll('#battle-options .opt');
+      if (!opts.length) return;
+      var correct = battle.correctAnswer || battle.currentWord.meaning;
+      opts.forEach(function (o) {
+        o.classList.add('disabled');
+        if (o.textContent === correct) o.classList.add('right');
+      });
+      handleAnswer(false, correct);
+    }, seconds * 1000);
+  }
+  function stopTimer() {
+    if (battleTimer) { clearTimeout(battleTimer); battleTimer = null; }
+    var fill = $('quiz-timer-fill');
+    if (fill) { fill.style.transition = 'none'; fill.style.width = '0%'; }
+  }
+
+  /* ===== 优先出复习词（排除本回合已出过的词） ===== */
+  function pickWordPool() {
+    var pool = wordBank.filter(function (w) { return w.meaning; });
+    if (!pool.length) return [];
+    var used = (battle && battle.usedWords) || [];
+    pool = pool.filter(function (w) { return used.indexOf(w.word) < 0; });
+    // 词库全用完了，重置
+    if (!pool.length) {
+      if (battle) battle.usedWords = [];
+      pool = wordBank.filter(function (w) { return w.meaning; });
+      if (!pool.length) return [];
+    }
+    var now = Date.now();
+    var due = pool.filter(function (w) { return w.state && w.state.due && w.state.due <= now; });
+    var notDue = pool.filter(function (w) { return !w.state || !w.state.due || w.state.due > now; });
+    if (due.length && (Math.random() < 0.7 || !notDue.length)) {
+      return due;
+    }
+    return notDue.length ? notDue : pool;
+  }
+
+  function nextQuestion() {
+    if (!battle || battle.ended) return;
+    var pool = pickWordPool();
+    if (!pool.length) {
+      alert('词库还是空的，先去「六眼 · 识词」录入单词');
+      showDifficultyMenu();
+      return;
+    }
+    battle.questionCount++;
+    $('battle-round').textContent = '第 ' + battle.questionCount + ' 回合';
+    // 修罗难度每3题宿傩回血
+    if (battle.diff === 'hard' && battle.questionCount > 1 && (battle.questionCount - 1) % 3 === 0) {
+      var regen = DIFFICULTIES.hard.regen;
+      battle.enemyHp = Math.min(battle.maxEnemyHp, battle.enemyHp + regen);
+      setDialogue('宿傩：反转术式，恢复 ' + regen + ' 点。');
+      renderBattle();
+    }
+    // 按难度选题型
+    var types = ['en2cn'];
+    if (battle.diff === 'normal' || battle.diff === 'hard') types.push('cn2en');
+    if (battle.diff === 'hard') types.push('listen');
+    // 宿傩怒气模式强制出难题
+    if (battle.rageActive && types.length > 1) {
+      types = types.filter(function (t) { return t !== 'en2cn'; });
+      if (!types.length) types = ['en2cn'];
+    }
+    // 避免连续3次同题型
+    var qType = types[Math.floor(Math.random() * types.length)];
+    if (battle.lastType && types.length > 1) {
+      if (qType === battle.lastType && (battle.typeStreak || 0) >= 2) {
+        types.splice(types.indexOf(qType), 1);
+        qType = types[Math.floor(Math.random() * types.length)];
+      }
+    }
+    if (qType === battle.lastType) {
+      battle.typeStreak = (battle.typeStreak || 0) + 1;
+    } else {
+      battle.typeStreak = 1;
+    }
+    battle.lastType = qType;
+
+    $('battle-quiz').classList.remove('hidden');
+    $('battle-feedback').classList.add('hidden');
+    if (qType === 'en2cn') buildEnToCn(pool);
+    else if (qType === 'cn2en') buildCnToEn(pool);
+    else if (qType === 'listen') buildListen(pool);
+    // 记录本回合已出过的词
+    if (battle.currentWord && battle.usedWords.indexOf(battle.currentWord.word) < 0) {
+      battle.usedWords.push(battle.currentWord.word);
+    }
+    var d = DIFFICULTIES[battle.diff];
+    startTimer(d.time);
+    $('battle-quiz').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
+  // 题型1：英文→选中文
+  function buildEnToCn(pool) {
+    battle.qType = 'en2cn';
+    battle.currentWord = pool[Math.floor(Math.random() * pool.length)];
+    battle.correctAnswer = battle.currentWord.meaning;
+    $('battle-word').innerHTML = '<span class="qword">' + escapeHtml(battle.currentWord.word) + '</span><span class="qhint">选择正确的中文释义</span>';
+    var box = $('battle-options');
+    box.innerHTML = '';
+    var correct = battle.currentWord.meaning;
+    var opts = pickOptions(pool, correct, 'meaning');
+    opts.forEach(function (o) {
+      var btn = makeOptBtn(o, o === correct);
       box.appendChild(btn);
     });
   }
 
-  function answerBattle(btn, chosen, correct) {
-    const opts = document.querySelectorAll('#battle-options .opt');
-    opts.forEach((o) => o.classList.add('disabled'));
-    const isRight = chosen === correct;
-    if (isRight) {
-      btn.classList.add('right');
-      sfxHit();
-    } else {
-      btn.classList.add('wrong');
-      opts.forEach((o) => { if (o.textContent === correct) o.classList.add('right'); });
-      sfxMiss();
+  // 题型2：中文→选英文
+  function buildCnToEn(pool) {
+    battle.qType = 'cn2en';
+    battle.currentWord = pool[Math.floor(Math.random() * pool.length)];
+    battle.correctAnswer = battle.currentWord.word;
+    $('battle-word').innerHTML = '<span class="qword">' + escapeHtml(battle.currentWord.meaning || '（无释义）') + '</span><span class="qhint">选择对应的英文单词</span>';
+    var box = $('battle-options');
+    box.innerHTML = '';
+    var correct = battle.currentWord.word;
+    var opts = pickOptions(pool, correct, 'word');
+    opts.forEach(function (o) {
+      var btn = makeOptBtn(o, o === correct);
+      box.appendChild(btn);
+    });
+  }
+
+  // 题型3：听音选词
+  function buildListen(pool) {
+    battle.qType = 'listen';
+    battle.currentWord = pool[Math.floor(Math.random() * pool.length)];
+    battle.correctAnswer = battle.currentWord.word;
+    $('battle-word').innerHTML = '<button class="qplay" id="qplay">🔊 点击播放</button><span class="qhint">听发音，选出单词</span>';
+    var playBtn = $('qplay');
+    if (playBtn) {
+      playBtn.addEventListener('click', function () { speakWord(battle.currentWord.word); });
     }
+    setTimeout(function () { speakWord(battle.currentWord.word); }, 200);
+    var box = $('battle-options');
+    box.innerHTML = '';
+    var correct = battle.currentWord.word;
+    var opts = pickOptions(pool, correct, 'word');
+    opts.forEach(function (o) {
+      var btn = makeOptBtn(o, o === correct);
+      box.appendChild(btn);
+    });
+  }
+
+  function speakWord(word) {
+    if (!('speechSynthesis' in window)) return;
+    var u = new SpeechSynthesisUtterance(word);
+    u.lang = 'en-US';
+    u.rate = 0.8;
+    u.volume = 1;
+    speechSynthesis.cancel();
+    if (bgmEl) { bgmEl.pause(); }
+    u.onend = function () {
+      if (soundEnabled && bgmEl) bgmEl.play().catch(function () {});
+    };
+    u.onerror = function () {
+      if (soundEnabled && bgmEl) bgmEl.play().catch(function () {});
+    };
+    speechSynthesis.speak(u);
+  }
+
+  function pickOptions(pool, correct, field) {
+    var allPool = wordBank.filter(function (w) { return w.meaning; });
+    var src = allPool.length >= 4 ? allPool : pool;
+    var opts = [correct];
+    var guard = 0;
+    while (opts.length < 4 && guard < 300) {
+      guard++;
+      var r = src[Math.floor(Math.random() * src.length)];
+      var val = r[field];
+      if (!val || val === correct || opts.indexOf(val) >= 0) continue;
+      opts.push(val);
+    }
+    while (opts.length < 4) opts.push('—');
+    shuffle(opts);
+    return opts;
+  }
+
+  function makeOptBtn(label, isCorrect) {
+    var btn = document.createElement('button');
+    btn.className = 'opt';
+    btn.textContent = label;
+    btn.addEventListener('click', function () {
+      stopTimer();
+      var opts2 = document.querySelectorAll('#battle-options .opt');
+      opts2.forEach(function (opt) { opt.classList.add('disabled'); });
+      if (isCorrect) { btn.classList.add('right'); }
+      else {
+        btn.classList.add('wrong');
+        opts2.forEach(function (opt) { if (opt.textContent === label && isCorrect) opt.classList.add('right'); });
+        opts2.forEach(function (opt) { if (opt.textContent === battle.correctAnswer) opt.classList.add('right'); });
+      }
+      handleAnswer(isCorrect, battle.correctAnswer);
+    });
+    return btn;
+  }
+
+  function handleAnswer(isRight, correct) {
+    stopTimer();
     $('battle-feedback').classList.remove('hidden');
-    // 更新遗忘曲线
     scheduleReview(battle.currentWord, isRight);
     saveWordBank();
     cloudSyncWords();
-
-    const tech = currentTech();
-    $('battle-feedback').textContent = isRight ? '✅ ' + tech.name + ' 命中！' : '❌ 正确答案：' + correct;
-
-    // 延迟结算，让玩家看到反馈
-    setTimeout(() => {
-      if (isRight) {
-        const dmg = tech.damage;
-        battle.enemyHp = Math.max(0, battle.enemyHp - dmg);
-        battle.combo++;
-        // 检查术式升级
-        const next = currentTech();
-        if (next.name !== tech.name) {
-          sfxUpgrade();
-          if (next.name === '无量空处') sfxVoid();
-        }
-        setDialogue(next.name + ' 命中！' + (next.name === '无量空处' ? '' : ' ' + pick(DIALOGUES.hit)));
-        renderBattle();
-        if (battle.enemyHp <= 0) { endBattle(true); return; }
-      } else {
-        battle.playerHp = Math.max(0, battle.playerHp - 12);
-        battle.combo = 0;
-        setDialogue(pick(DIALOGUES.miss));
-        renderBattle();
-        if (battle.playerHp <= 0) { endBattle(false); return; }
+    var tech = currentTech();
+    var d = DIFFICULTIES[battle.diff];
+    if (isRight) {
+      battle.correctCount++;
+      sfxHit(tech.name);
+      playTechEffect(tech.name, true);
+      var dmg = tech.damage;
+      var isCrit = Math.random() < d.critRate;
+      if (isCrit) {
+        dmg = Math.round(dmg * 1.5);
+        screenShake(true);
       }
-      // 下一回合
-      $('battle-quiz').classList.add('hidden');
-      $('btn-attack').classList.remove('hidden');
-    }, 700);
+      battle.enemyHp = Math.max(0, battle.enemyHp - dmg);
+      battle.combo++;
+      showDmgFloat(dmg, isCrit, false);
+      var next = currentTech();
+      if (next.name !== tech.name) {
+        sfxUpgrade();
+        if (next.name === '无量空处') sfxVoid();
+      }
+      if (next.name === '无量空处' && tech.name !== '无量空处') {
+        setDialogue('五条悟：领域展开——无量空处。');
+      } else {
+        var hitLine = isCrit ? '暴击！' + next.name + ' 命中！' : next.name + ' 命中！';
+        setDialogue(hitLine + (next.name === '无量空处' ? '' : ' ' + pick(DIALOGUES.hit)));
+      }
+      $('battle-feedback').textContent = (isCrit ? '💥 暴击！' : '✅ ') + tech.name + ' 命中！-' + dmg;
+      // 答对清除怒气
+      if (battle.sukunaRage > 0) battle.sukunaRage = Math.max(0, battle.sukunaRage - 1);
+    } else {
+      battle.wrongCount++;
+      sfxMiss();
+      playTechEffect('', false);
+      var pDmg = d.enemyDmg;
+      // 宿傩怒气累计
+      battle.sukunaRage++;
+      if (battle.sukunaRage >= d.rageThreshold && !battle.rageActive) {
+        battle.rageActive = true;
+        pDmg = Math.round(pDmg * 2);
+        setDialogue('宿傩：领域展开——伏魔御厨子。');
+        playVoice('sukuna_atk');
+        screenShake(true);
+        battle.sukunaRage = 0;
+      } else if (battle.rageActive) {
+        // 怒气持续期间伤害翻倍
+        pDmg = Math.round(pDmg * 1.5);
+      }
+      battle.playerHp = Math.max(0, battle.playerHp - pDmg);
+      battle.combo = 0;
+      showDmgFloat(pDmg, false, true);
+      if (!battle.rageActive) setDialogue(pick(DIALOGUES.miss));
+      $('battle-feedback').textContent = '❌ 正确答案：' + correct + '（五条悟 -' + pDmg + (battle.rageActive ? ' 怒气!' : '') + '）';
+      // 怒气持续 1 回合后结束
+      if (battle.rageActive) {
+        setTimeout(function () { battle.rageActive = false; renderBattle(); }, 100);
+      }
+    }
+    renderBattle();
+    if (battle.enemyHp <= 0) { endBattle(true); return; }
+    if (battle.playerHp <= 0) { endBattle(false); return; }
+    setTimeout(function () { nextQuestion(); }, 900);
   }
 
   function endBattle(win) {
     battle.ended = true;
+    stopTimer();
     $('battle-quiz').classList.add('hidden');
-    $('btn-attack').classList.add('hidden');
-    $('battle-result').classList.remove('hidden');
+    var result = $('battle-result');
+    result.classList.remove('hidden');
+    void result.offsetWidth;
+    result.classList.add('show');
     if (win) {
       sfxWin();
+      playVoice('win');
       $('battle-emoji').textContent = '🏆';
       $('battle-title').textContent = '胜利';
       $('battle-text').textContent = pick(DIALOGUES.win);
@@ -819,6 +1383,15 @@
       $('battle-text').textContent = pick(DIALOGUES.lose);
       setDialogue(pick(DIALOGUES.lose));
     }
+    // 战绩统计
+    updateBattleStats(win, battle.combo, battle.correctCount, battle.wrongCount);
+    var stats = getBattleStats();
+    $('battle-stats').innerHTML =
+      '<div class="bs-row"><span>本局答题</span><b>' + battle.correctCount + ' 对 / ' + battle.wrongCount + ' 错</b></div>' +
+      '<div class="bs-row"><span>最高连击</span><b>' + battle.combo + '</b></div>' +
+      '<div class="bs-row"><span>累计战绩</span><b>' + stats.wins + ' 胜 ' + stats.losses + ' 败</b></div>' +
+      '<div class="bs-row"><span>历史最高连击</span><b>' + stats.bestCombo + '</b></div>';
+    stopBgm();
     renderBattle();
   }
 
@@ -871,7 +1444,7 @@
     const status = $('identify-status');
     status.classList.remove('hidden');
     status.classList.remove('error');
-    status.textContent = '六眼正在扫描截图中的单词…';
+    status.innerHTML = '<span class="loading-ring"></span> 六眼正在扫描截图中的单词…';
     $('btn-identify').disabled = true;
 
     try {
@@ -941,14 +1514,27 @@
   }
 
   function renderBank() {
-    $('bank-total').textContent = wordBank.length;
-    $('bank-due').textContent = dueWords().length;
-    $('bank-mastered').textContent = wordBank.filter((w) => w.state && w.state.ivl >= 7).length;
+    var now = Date.now();
+    var cnt = { total: 0, neww: 0, learning: 0, due: 0, mastered: 0 };
+    wordBank.forEach(function (w) {
+      cnt.total++;
+      var s = w.state || {};
+      if (!s.due || s.due === 0) cnt.neww++;
+      else if (s.due <= now) cnt.due++;
+      else if (s.ivl >= 7) cnt.mastered++;
+      else cnt.learning++;
+    });
+    $('bank-total').textContent = cnt.total;
+    $('bank-new').textContent = cnt.neww;
+    $('bank-learning').textContent = cnt.learning;
+    $('bank-due').textContent = cnt.due;
+    $('bank-mastered').textContent = cnt.mastered;
     $('bank-list-count').textContent = wordBank.length;
     const box = $('bank-list');
     box.innerHTML = '';
     if (!wordBank.length) {
-      box.innerHTML = '<p class="sub" style="text-align:center;padding:16px">词库还是空的，先去「六眼 · 识词」录入单词。</p>';
+      box.innerHTML = '<div class="empty-state"><div class="empty-icon">🌀</div><h4>词库还是空的</h4><p>先去「六眼 · 识词」上传截图录入单词吧</p><button class="btn-link" data-goto="identify">去识词 →</button></div>';
+      box.querySelector('[data-goto]')?.addEventListener('click', function(){ gotoCard('identify'); });
       return;
     }
     wordBank.forEach((w) => {
@@ -1360,10 +1946,393 @@
 
     $('btn-generate').addEventListener('click', generate);
     $('btn-identify').addEventListener('click', identifyWords);
-    // 游戏
-    $('btn-attack').addEventListener('click', startAttack);
+    // 游戏 - 难度选择
+    document.querySelectorAll('.diff-card[data-diff]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var diff = btn.dataset.diff;
+        var noMeaning = wordBank.filter(function (w) { return !w.meaning; }).map(function (w) { return w.word; });
+        if (noMeaning.length && cfg.write.key) {
+          fetchMeanings(noMeaning).then(function (meanings) {
+            wordBank.forEach(function (w) {
+              if (!w.meaning && meanings[w.word.toLowerCase()]) w.meaning = meanings[w.word.toLowerCase()];
+            });
+            saveWordBank();
+            startBattle(diff);
+          }).catch(function () { startBattle(diff); });
+        } else {
+          startBattle(diff);
+        }
+      });
+    });
     $('btn-sound').addEventListener('click', toggleSound);
-    $('btn-battle-again').addEventListener('click', resetBattle);
+    $('btn-battle-again').addEventListener('click', function () {
+      hideAllGameUI();
+      if (battle) startBattle(battle.diff);
+    });
+    $('btn-battle-menu').addEventListener('click', function () {
+      hideAllGameUI();
+      showDifficultyMenu();
+    });
+    $('btn-battle-game-select').addEventListener('click', function () {
+      hideAllGameUI();
+      showGameSelect();
+    });
+
+    /* ===== 游戏选择 ===== */
+    document.querySelectorAll('.game-card').forEach(function (card) {
+      card.addEventListener('click', function () {
+        var game = card.dataset.game;
+        if (game === 'battle') {
+          showDifficultyMenu();
+        } else if (game === 'speed') {
+          startSpeedGame();
+        } else if (game === 'match') {
+          startMatchGame();
+        } else if (game === 'rain') {
+          startRainGame();
+        }
+      });
+    });
+
+    /* ===== 六眼·闪卡竞速 ===== */
+    function startSpeedGame() {
+      $('game-select').classList.add('hidden');
+      $('speed-result').classList.add('hidden');
+      $('speed-arena').classList.remove('hidden');
+      speedGame = { time: 60, correct: 0, wrong: 0, combo: 0, maxCombo: 0, active: true, timer: null, current: null, used: [] };
+      updateSpeedUI();
+      nextSpeedQuestion();
+      speedGame.timer = setInterval(function () {
+        speedGame.time--;
+        if (speedGame.time <= 0) {
+          speedGame.time = 0;
+          endSpeedGame();
+          return;
+        }
+        updateSpeedUI();
+      }, 1000);
+    }
+    function updateSpeedUI() {
+      $('speed-time').textContent = speedGame.time;
+      $('speed-correct').textContent = speedGame.correct;
+      $('speed-wrong').textContent = speedGame.wrong;
+      $('speed-combo').textContent = speedGame.combo;
+      $('speed-timer-fill').style.width = (speedGame.time / 60 * 100) + '%';
+      $('speed-timer-fill').style.background = speedGame.time > 20 ? 'var(--gojo-blue)' : speedGame.time > 10 ? '#e0a800' : 'var(--sukuna-red)';
+    }
+    function nextSpeedQuestion() {
+      if (!speedGame || !speedGame.active) return;
+      var pool = getGameWordPool(speedGame.used, 1);
+      if (!pool.length) { speedGame.used = []; pool = getGameWordPool(speedGame.used, 1); }
+      if (!pool.length) { endSpeedGame(); return; }
+      var w = pool[0];
+      speedGame.used.push(w.word.toLowerCase());
+      speedGame.current = w;
+      var opts = buildOptions(w, 4);
+      $('speed-word').textContent = w.word;
+      var oc = $('speed-options');
+      oc.innerHTML = '';
+      opts.forEach(function (opt) {
+        var b = document.createElement('button');
+        b.className = 'speed-opt';
+        b.textContent = opt;
+        b.addEventListener('click', function () {
+          if (!speedGame.active) return;
+          if (opt === w.meaning) {
+            speedGame.correct++;
+            speedGame.combo++;
+            if (speedGame.combo > speedGame.maxCombo) speedGame.maxCombo = speedGame.combo;
+            speedGame.time = Math.min(60, speedGame.time + 0.5);
+            b.classList.add('opt-correct');
+            applySm2(w, true);
+            updateSpeedUI();
+            setTimeout(function () { nextSpeedQuestion(); }, 200);
+          } else {
+            speedGame.wrong++;
+            speedGame.combo = 0;
+            speedGame.time = Math.max(0, speedGame.time - 3);
+            b.classList.add('opt-wrong');
+            var allOpts = oc.querySelectorAll('.speed-opt');
+            allOpts.forEach(function (o) { if (o.textContent === w.meaning) o.classList.add('opt-correct'); });
+            $('speed-word').innerHTML = '<span class="qword">' + escapeHtml(w.word) + '</span><span class="speed-answer">✅ ' + escapeHtml(w.meaning) + '</span>';
+            applySm2(w, false);
+            updateSpeedUI();
+            setTimeout(function () { nextSpeedQuestion(); }, 1200);
+          }
+        });
+        oc.appendChild(b);
+      });
+    }
+    function endSpeedGame() {
+      if (!speedGame) return;
+      speedGame.active = false;
+      if (speedGame.timer) clearInterval(speedGame.timer);
+      var accuracy = speedGame.correct + speedGame.wrong > 0 ? Math.round(speedGame.correct / (speedGame.correct + speedGame.wrong) * 100) : 0;
+      var best = parseInt(localStorage.getItem('cet4_speed_best') || '0', 10);
+      var isNew = speedGame.correct > best;
+      if (isNew) { localStorage.setItem('cet4_speed_best', speedGame.correct); best = speedGame.correct; }
+      $('speed-emoji').textContent = isNew ? '⚡' : '👁️';
+      $('speed-result-title').textContent = isNew ? '新纪录！' : '时间到';
+      $('speed-result-stats').innerHTML = '<div class="result-stat"><span class="result-stat-val">' + speedGame.correct + '</span><span class="result-stat-label">答对</span></div><div class="result-stat"><span class="result-stat-val">' + speedGame.wrong + '</span><span class="result-stat-label">答错</span></div><div class="result-stat"><span class="result-stat-val">' + accuracy + '%</span><span class="result-stat-label">正确率</span></div><div class="result-stat"><span class="result-stat-val">' + speedGame.maxCombo + '</span><span class="result-stat-label">最高连击</span></div>';
+      $('speed-best').textContent = '历史最高：' + best + ' 词';
+      hideAllGameUI();
+      $('speed-result').classList.remove('hidden');
+    }
+    $('btn-speed-quit').addEventListener('click', function () {
+      if (speedGame) { speedGame.active = false; if (speedGame.timer) clearInterval(speedGame.timer); }
+      hideAllGameUI();
+      showGameSelect();
+    });
+    $('btn-speed-again').addEventListener('click', function () {
+      hideAllGameUI();
+      startSpeedGame();
+    });
+    $('btn-speed-menu').addEventListener('click', function () {
+      hideAllGameUI();
+      showGameSelect();
+    });
+
+    /* ===== 领域展开·记忆翻牌 ===== */
+    function startMatchGame() {
+      $('game-select').classList.add('hidden');
+      $('match-result').classList.add('hidden');
+      $('match-arena').classList.remove('hidden');
+      var allWords = wordBank.filter(function (w) { return w.meaning; });
+      if (allWords.length < 2) {
+        $('match-board').innerHTML = '<p class="sub" style="text-align:center;padding:40px 0">词库不足 2 个词，请先添加更多单词</p>';
+        matchGame = { active: false };
+        return;
+      }
+      var pairCount = Math.min(8, allWords.length);
+      var shuffled = allWords.slice();
+      shuffle(shuffled);
+      var pairs = shuffled.slice(0, pairCount).map(function (w) { return { word: w.word, meaning: w.meaning }; });
+      var cards = [];
+      pairs.forEach(function (p, i) {
+        cards.push({ id: i, side: 'en', text: p.word });
+        cards.push({ id: i, side: 'zh', text: p.meaning });
+      });
+      shuffle(cards);
+      matchGame = { cards: cards, flipped: [], matched: new Set(), moves: 0, startTime: Date.now(), timer: null, active: true };
+      $('match-pairs').textContent = '0/' + pairCount;
+      updateMatchUI();
+      var board = $('match-board');
+      board.innerHTML = '';
+      var cols = pairCount <= 4 ? 4 : 4;
+      board.style.gridTemplateColumns = 'repeat(' + cols + ', 1fr)';
+      cards.forEach(function (c, idx) {
+        var el = document.createElement('div');
+        el.className = 'match-card';
+        el.dataset.idx = idx;
+        el.addEventListener('click', function () { flipMatchCard(idx); });
+        board.appendChild(el);
+      });
+      matchGame.timer = setInterval(function () { updateMatchUI(); }, 1000);
+    }
+    function updateMatchUI() {
+      if (!matchGame) return;
+      $('match-pairs').textContent = matchGame.matched.size + '/' + (matchGame.cards.length / 2);
+      $('match-moves').textContent = matchGame.moves;
+      $('match-time').textContent = Math.floor((Date.now() - matchGame.startTime) / 1000) + 's';
+    }
+    function flipMatchCard(idx) {
+      if (!matchGame || !matchGame.active) return;
+      if (matchGame.flipped.length >= 2) return;
+      if (matchGame.flipped.indexOf(idx) >= 0) return;
+      if (matchGame.matched.has(matchGame.cards[idx].id)) return;
+      var el = $('match-board').children[idx];
+      el.classList.add('flipped');
+      el.textContent = matchGame.cards[idx].text;
+      el.classList.add(matchGame.cards[idx].side === 'en' ? 'card-en' : 'card-zh');
+      matchGame.flipped.push(idx);
+      if (matchGame.flipped.length === 2) {
+        matchGame.moves++;
+        var a = matchGame.cards[matchGame.flipped[0]];
+        var b = matchGame.cards[matchGame.flipped[1]];
+        if (a.id === b.id && a.side !== b.side) {
+          matchGame.matched.add(a.id);
+          setTimeout(function () {
+            matchGame.flipped.forEach(function (i) {
+              $('match-board').children[i].classList.add('matched');
+            });
+            matchGame.flipped = [];
+            updateMatchUI();
+            if (matchGame.matched.size === matchGame.cards.length / 2) endMatchGame();
+          }, 400);
+        } else {
+          setTimeout(function () {
+            matchGame.flipped.forEach(function (i) {
+              var e = $('match-board').children[i];
+              e.classList.remove('flipped', 'card-en', 'card-zh');
+              e.textContent = '';
+            });
+            matchGame.flipped = [];
+          }, 800);
+        }
+        updateMatchUI();
+      }
+    }
+    function endMatchGame() {
+      if (!matchGame) return;
+      matchGame.active = false;
+      if (matchGame.timer) clearInterval(matchGame.timer);
+      var time = Math.floor((Date.now() - matchGame.startTime) / 1000);
+      var totalPairs = matchGame.cards.length / 2;
+      var rating = time < 30 ? '领域展开！' : time < 60 ? '领域解除' : '领域崩溃';
+      $('match-emoji').textContent = time < 30 ? '🌀' : time < 60 ? '✨' : '💫';
+      $('match-result-title').textContent = rating;
+      $('match-result-stats').innerHTML = '<div class="result-stat"><span class="result-stat-val">' + totalPairs + '</span><span class="result-stat-label">配对数</span></div><div class="result-stat"><span class="result-stat-val">' + matchGame.moves + '</span><span class="result-stat-label">翻牌数</span></div><div class="result-stat"><span class="result-stat-val">' + time + 's</span><span class="result-stat-label">用时</span></div>';
+      hideAllGameUI();
+      $('match-result').classList.remove('hidden');
+    }
+    $('btn-match-quit').addEventListener('click', function () {
+      if (matchGame) { matchGame.active = false; if (matchGame.timer) clearInterval(matchGame.timer); }
+      hideAllGameUI();
+      showGameSelect();
+    });
+    $('btn-match-again').addEventListener('click', function () {
+      hideAllGameUI();
+      startMatchGame();
+    });
+    $('btn-match-menu').addEventListener('click', function () {
+      hideAllGameUI();
+      showGameSelect();
+    });
+
+    /* ===== 无量空处·单词雨 ===== */
+    function startRainGame() {
+      $('game-select').classList.add('hidden');
+      $('rain-result').classList.add('hidden');
+      $('rain-arena').classList.remove('hidden');
+      rainGame = { score: 0, lives: 3, combo: 0, level: 1, active: true, drops: [], used: [], currentDrop: null, spawnTimer: null, tickTimer: null, spawnDelay: 2200, fallSpeed: 2.5, lastSpawn: Date.now() };
+      updateRainUI();
+      $('rain-zone').innerHTML = '';
+      spawnRainDrop();
+      rainGame.tickTimer = setInterval(function () { rainTick(); }, 50);
+    }
+    function updateRainUI() {
+      if (!rainGame) return;
+      $('rain-score').textContent = rainGame.score;
+      $('rain-lives').textContent = rainGame.lives;
+      $('rain-combo').textContent = rainGame.combo;
+      $('rain-level').textContent = rainGame.level;
+    }
+    function spawnRainDrop() {
+      if (!rainGame || !rainGame.active) return;
+      var pool = getGameWordPool(rainGame.used, 1);
+      if (!pool.length) { rainGame.used = []; pool = getGameWordPool(rainGame.used, 1); }
+      if (!pool.length) return;
+      var w = pool[0];
+      rainGame.used.push(w.word.toLowerCase());
+      rainGame.currentDrop = w;
+      var opts = buildOptions(w, 4);
+      var el = document.createElement('div');
+      el.className = 'rain-drop';
+      el.textContent = w.word;
+      el.style.left = (Math.random() * 70 + 5) + '%';
+      el.style.top = '-40px';
+      $('rain-zone').appendChild(el);
+      rainGame.drops.push({ el: el, word: w, y: -40, opts: opts });
+      var oc = $('rain-options');
+      oc.innerHTML = '';
+      opts.forEach(function (opt) {
+        var b = document.createElement('button');
+        b.className = 'rain-opt';
+        b.textContent = opt;
+        b.addEventListener('click', function () {
+          if (!rainGame.active) return;
+          if (opt === w.meaning) {
+            rainGame.score += 10 + rainGame.combo * 2;
+            rainGame.combo++;
+            if (rainGame.combo > 0 && rainGame.combo % 5 === 0) {
+              rainGame.level++;
+              rainGame.fallSpeed += 0.5;
+              rainGame.spawnDelay = Math.max(1500, rainGame.spawnDelay - 200);
+            }
+            el.classList.add('rain-pop');
+            applySm2(w, true);
+            updateRainUI();
+            setTimeout(function () { el.remove(); }, 300);
+            rainGame.drops = rainGame.drops.filter(function (d) { return d.el !== el; });
+            rainGame.lastSpawn = 0;
+          } else {
+            rainGame.combo = 0;
+            rainGame.lives--;
+            b.classList.add('opt-wrong');
+            el.classList.add('rain-miss');
+            var allOpts = oc.querySelectorAll('.rain-opt');
+            allOpts.forEach(function (o) { if (o.textContent === w.meaning) o.classList.add('opt-correct'); });
+            allOpts.forEach(function (o) { o.style.pointerEvents = 'none'; });
+            el.innerHTML = w.word + '<br><span class="rain-answer">✅ ' + escapeHtml(w.meaning) + '</span>';
+            el.style.borderColor = 'var(--sukuna-red)';
+            applySm2(w, false);
+            updateRainUI();
+            if (rainGame.lives <= 0) {
+              setTimeout(function () { endRainGame(); }, 1200);
+              return;
+            }
+            setTimeout(function () {
+              el.remove();
+              rainGame.drops = rainGame.drops.filter(function (d) { return d.el !== el; });
+              rainGame.lastSpawn = 0;
+            }, 1200);
+          }
+        });
+        oc.appendChild(b);
+      });
+    }
+    function rainTick() {
+      if (!rainGame || !rainGame.active) return;
+      var zoneH = $('rain-zone').offsetHeight || 300;
+      for (var i = rainGame.drops.length - 1; i >= 0; i--) {
+        var d = rainGame.drops[i];
+        if (d.el.classList.contains('rain-miss')) continue;
+        d.y += rainGame.fallSpeed;
+        d.el.style.top = d.y + 'px';
+        if (d.y > zoneH - 50) {
+          d.el.classList.add('rain-fall');
+          rainGame.lives--;
+          rainGame.combo = 0;
+          applySm2(d.word, false);
+          d.el.remove();
+          rainGame.drops.splice(i, 1);
+          updateRainUI();
+          if (rainGame.lives <= 0) { endRainGame(); return; }
+        }
+      }
+      var now = Date.now();
+      if (rainGame.drops.length === 0 && now - rainGame.lastSpawn > 200) {
+        rainGame.lastSpawn = now;
+        spawnRainDrop();
+      }
+    }
+    function endRainGame() {
+      if (!rainGame) return;
+      rainGame.active = false;
+      if (rainGame.tickTimer) clearInterval(rainGame.tickTimer);
+      var best = parseInt(localStorage.getItem('cet4_rain_best') || '0', 10);
+      var isNew = rainGame.score > best;
+      if (isNew) { localStorage.setItem('cet4_rain_best', rainGame.score); best = rainGame.score; }
+      $('rain-emoji').textContent = isNew ? '💜' : '💫';
+      $('rain-result-title').textContent = isNew ? '新纪录！' : '领域解除';
+      $('rain-result-stats').innerHTML = '<div class="result-stat"><span class="result-stat-val">' + rainGame.score + '</span><span class="result-stat-label">得分</span></div><div class="result-stat"><span class="result-stat-val">' + rainGame.level + '</span><span class="result-stat-label">最高层级</span></div>';
+      $('rain-best').textContent = '历史最高：' + best + ' 分';
+      hideAllGameUI();
+      $('rain-result').classList.remove('hidden');
+    }
+    $('btn-rain-quit').addEventListener('click', function () {
+      if (rainGame) { rainGame.active = false; if (rainGame.tickTimer) clearInterval(rainGame.tickTimer); }
+      hideAllGameUI();
+      showGameSelect();
+    });
+    $('btn-rain-again').addEventListener('click', function () {
+      hideAllGameUI();
+      startRainGame();
+    });
+    $('btn-rain-menu').addEventListener('click', function () {
+      hideAllGameUI();
+      showGameSelect();
+    });
     // 短文页里的「去识词」按钮（不在工作台卡片里，需单独绑定）
     const gotoIdentify = $('btn-goto-identify');
     if (gotoIdentify) gotoIdentify.addEventListener('click', () => gotoCard('identify'));
